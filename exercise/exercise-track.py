@@ -6,12 +6,9 @@
 import argparse
 import datetime
 import decimal
-import json
 import subprocess
 import sys
 import unittest
-
-import numpy
 
 import walking
 from histogram import Histogram
