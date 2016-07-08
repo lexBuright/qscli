@@ -38,27 +38,27 @@ def change_setting(lst, value, incr):
     return lst[index]
 
 def start_walking():
-    bt('superwatch.py start walking.speed -n 0.8')
-    bt('superwatch.py start walking.incline -n 0.0')
+    bt('superwatch.sh start walking.speed -n 0.8')
+    bt('superwatch.sh start walking.incline -n 0.0')
     print 'Starting exercise'
 
 def change_incline(incr):
-    bt('superwatch.py show walking.incline --json ')
+    bt('superwatch.sh show walking.incline --json ')
     incline = json.loads(
         bt("""
-superwatch.py show walking.incline --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'"""
+superwatch.sh show walking.incline --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'"""
           ).strip())
     new_incline = next_incline(incline, incr)
-    bt('superwatch.py split walking.incline -n {}'.format(new_incline))
+    bt('superwatch.sh split walking.incline -n {}'.format(new_incline))
     print 'incline', new_incline
 
 def change_speed(incr):
-    bt('superwatch.py show walking.incline --json ')
+    bt('superwatch.sh show walking.incline --json ')
     speed = json.loads(bt("""
-    	superwatch.py show walking.speed --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'
+    	superwatch.sh show walking.speed --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'
     """).strip())
     new_speed = next_speed(speed, incr)
-    bt('superwatch.py split walking.speed -n {}'.format(new_speed))
+    bt('superwatch.sh split walking.speed -n {}'.format(new_speed))
     print 'speed', new_speed
 
 def next_incline(incline, incr):
@@ -68,8 +68,8 @@ def next_speed(incline, incr):
     return change_setting(SPEEDS, incline, incr)
 
 def reset_settings():
-    bt('superwatch.py split walking.speed -n {}'.format(SPEEDS[0]))
-    bt('superwatch.py split walking.incline -n {}'.format(INCLINES[0]))
+    bt('superwatch.sh split walking.speed -n {}'.format(SPEEDS[0]))
+    bt('superwatch.sh split walking.incline -n {}'.format(INCLINES[0]))
 
 def get_distance(clock='walking.speed', start=None, end=None):
     "Distance walked in kilometers per hour"
@@ -78,29 +78,29 @@ def get_distance(clock='walking.speed', start=None, end=None):
 
 def show():
     print 'speeds'
-    print bt('superwatch.py show walking.speed | tail -n 10')
+    print bt('superwatch.sh show walking.speed | tail -n 10')
     print 'inclines'
-    print bt('superwatch.py show walking.incline | tail -n 10')
+    print bt('superwatch.sh show walking.incline | tail -n 10')
 
 def show_all():
     print 'speeds'
-    print bt('superwatch.py show walking.speed')
+    print bt('superwatch.sh show walking.speed')
     print 'inclines'
-    print bt('superwatch.py show walking.incline')
+    print bt('superwatch.sh show walking.incline')
 
 def stop():
-    bt('superwatch.py stop walking.speed')
-    bt('superwatch.py stop walking.incline')
+    bt('superwatch.sh stop walking.speed')
+    bt('superwatch.sh stop walking.incline')
     timestamp = datetime.datetime.now().strftime(MINUTE_SPEC)
-    bt('superwatch.py save walking.speed walking.speed.{}'.format(timestamp))
-    bt('superwatch.py save walking.incline walking.incline.{}'.format(timestamp))
-    bt('superwatch.py delete walking.speed')
-    bt('superwatch.py delete walking.incline')
+    bt('superwatch.sh save walking.speed walking.speed.{}'.format(timestamp))
+    bt('superwatch.sh save walking.incline walking.incline.{}'.format(timestamp))
+    bt('superwatch.sh delete walking.speed')
+    bt('superwatch.sh delete walking.incline')
     print 'Done walking'
 
 def _get_clocks_for_day(seek_day):
     today = datetime.datetime.now().date()
-    for clock in bt('superwatch.py clocks --quiet').splitlines():
+    for clock in bt('superwatch.sh clocks --quiet').splitlines():
         if clock.startswith('walking.speed'):
             if clock == 'walking.speed':
                 date = today
@@ -139,14 +139,14 @@ def get_time_at_speed(clock='walking.speed'):
 def load_play(clock, start=None, end=None):
     start_string = '--after {} '.format(start) if start else ''
     end_string = '--before {} '.format(end) if start else ''
-    data_string = bt('superwatch.py play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
+    data_string = bt('superwatch.sh play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
     data = numpy.array([
         (float(line.split()[0]), decimal.Decimal(line.split()[1]))
         for line in data_string.splitlines()])
     return data
 
 def get_current_speed():
-    result = backticks(['superwatch.py show walking.speed --json'])
+    result = backticks(['superwatch.sh show walking.speed --json'])
     data = json.loads(result)
     return decimal.Decimal(data['splits'][-1]['name'])
 

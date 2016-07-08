@@ -207,11 +207,11 @@ def main():
 
 
 def start_sprint(duration):
-    backticks('superwatch.py start walking.sprint.{}'.format(duration))
+    backticks('superwatch.sh start walking.sprint.{}'.format(duration))
 
 def stop_sprint(duration):
-    backticks('superwatch.py stop walking.sprint.{}'.format(duration))
-    result = backticks('superwatch.py show walking.sprint.{} --json'.format(duration))
+    backticks('superwatch.sh stop walking.sprint.{}'.format(duration))
+    result = backticks('superwatch.sh show walking.sprint.{} --json'.format(duration))
     data = json.loads(result)
     distance = walking.get_distance(start=data['start'], end=data['stop'])
     backticks('cli-score.py store walking.sprint.{} {}'.format(duration, distance))
