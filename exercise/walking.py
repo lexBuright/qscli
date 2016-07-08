@@ -2,13 +2,18 @@ import collections
 import datetime
 import decimal
 import json
+import logging
 import subprocess
 
 import numpy
 
 from histogram import Histogram
 
+LOGGER = logging.getLogger()
+
 MINUTE_SPEC = '%Y-%m-%dT%H%M'
+
+
 INCLINES = [
     "0.0", "0.5", "1.0", "1.5", "2.0", "2.5", "3.0", "3.5", "4.0", "4.5",
     "5.0", "5.5", "6.0", "6.5", "7.0", "7.5", "8.0", "8.5", "9.0", "9.5",
@@ -17,14 +22,16 @@ SPEEDS = ["{:.1f}".format(n) for n  in numpy.arange(0.8, 20.1, 0.1)]
 
 def backticks(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
+
+    LOGGER.debug('Running %r', command)
     result, _ = process.communicate(command)
+    LOGGER.debug('Finished %r', command)
+
     if process.returncode != 0:
         raise Exception('{!r} returned non-zero return code {!r}'.format(command, process.returncode))
     return result
 
 bt = backticks
-
-
 
 def change_setting(lst, value, incr):
     index = min(len(lst), max(lst.index(value) + incr, 0))
@@ -64,10 +71,10 @@ def reset_settings():
     bt('superwatch.py split walking.speed -n {}'.format(SPEEDS[0]))
     bt('superwatch.py split walking.incline -n {}'.format(INCLINES[0]))
 
-def get_distance(clock='walking.speed'):
+def get_distance(clock='walking.speed', start=None, end=None):
     "Distance walked in kilometers per hour"
-    data = load_play(clock)
-    return sum(numpy.diff(data[:, 0]) * data[1:, 1]) / 3600
+    data = load_play(clock, start=start, end=end)
+    return sum(numpy.diff(data[:, 0]) * map(float, data[1:, 1])) / 3600
 
 def show():
     print 'speeds'
@@ -129,8 +136,10 @@ def get_time_at_speed(clock='walking.speed'):
 
     return totals
 
-def load_play(clock):
-    data_string = bt('superwatch.py play {} --no-wait'.format(clock))
+def load_play(clock, start=None, end=None):
+    start_string = '--after {} '.format(start) if start else ''
+    end_string = '--before {} '.format(end) if start else ''
+    data_string = bt('superwatch.py play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
     data = numpy.array([
         (float(line.split()[0]), decimal.Decimal(line.split()[1]))
         for line in data_string.splitlines()])
@@ -143,16 +152,26 @@ def get_current_speed():
 
 def get_time_blocks(day):
     "Return blocks form (start, speed, duration) for a given day"
-    for clocks in sorted(_get_clocks_for_day(day)):
+    for clock in sorted(_get_clocks_for_day(day)):
         data = load_play(clock)
-        timestamps = data[:-1, 0]
-        time_spent = numpy.diff(data[:, 0])
-        speed = data[:-1, 1]
-        start_time, last_speed, total_time = None, None, 0
-        for timestamp, speed, time in  zip(timestamps, decimal.Decimal(speed), time_spent):
+        starts = data[:-1, 0]
+        ends = data[1:, 0]
+        speeds = data[:-1, 1]
+
+        last_start, last_end, last_speed = None, None, None
+        for start, end, speed in zip(starts, ends, map(decimal.Decimal, speeds)):
+            print start, end, speed
+            assert end > start
+
             if last_speed != speed:
-                if total_time > 0:
-                    yield start_time, last_speed, total_time
-                start_time, last_speed, total_time = timestamp, speed, 0
-            total_time += time
-        yield start_time, last_speed, total_time
+                if last_speed:
+                    assert last_end > last_start
+                    yield last_start, last_end, last_speed
+
+                last_start = start
+                last_speed = speed
+            last_end = end
+
+
+        assert last_end > last_start
+        yield last_start, last_end, speed

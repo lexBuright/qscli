@@ -1,21 +1,43 @@
 import argparse
+import contextlib
+import copy
+import datetime
+import json
+import os.path
+import time
+
+import fasteners
+
+import blocks
+import walking
+
 
 class PersonalBestTracker(object):
+    HORIZON = 4
     def __init__(self, get_after, storer):
         self.get_after = get_after
         self.storer = storer
 
     def update(self):
         with self.storer:
-            best, best_id = self.storer['last_best'], self.storer['last_best_id']
-            now = datetime.datetime.now()
-            for value_id, value in self.get_after(now):
-                if value > best:
+            last_updated = datetime.datetime.fromtimestamp(
+                self.storer.get('last_updated', time.time() - self.HORIZON * 86400))
+            best, best_start = self.storer.get('last_best', None), self.storer.get('last_best_start', None)
+            for start, value in self.get_after(last_updated):
+                if best is None or value > best:
                     best = value
-                    best_id = value_id
-            self.storer['last_best'] = best
-            self.storer['last_best_id'] = best_id
-            return best, best_id
+                    best_start = start
+
+            if best:
+                self.storer['last_best'] = best
+
+            if best_start:
+                self.storer['last_best_start'] = time.mktime(best_start.timetuple()) + best_start.microsecond * 1.0e-6
+
+            if best_start:
+                self.storer['last_updated'] = time.mktime(start.timetuple()) + start.microsecond * 1.0e-6
+
+            return best, best_start
 
     def get(self):
         with self.storer:
@@ -61,38 +83,54 @@ class BestStorer(object):
         bests = self.data.setdefault('bests', dict())
         bests[key] = value
 
+    def __getitem__(self, key):
+        bests = self.data.get('bests', dict())
+        return bests[key]
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
     def __exit__(self, *args):
         self.with_data.__exit__(*args)
         self.with_data = None
         self.data = None
 
 def get_blocks_after(after):
-    for start, speed, duration in walking.get_time_blocks(datetime.datetime.fromtimestamp(after).date()):
-        end = start + duration
-        if end > after_unix:
-            continue
-        else:
-            new_start = max(after, start)
-            yield new_start, speed, end - new_start
+    after_unix = time.mktime(after.timetuple()) + after.microsecond * 1.0e-6
 
-def period_align_blocks(blocks, period):
-    for start, speed, duration in blocks:
+    day = after.date()
+    while day < datetime.date.today():
+        for start, end, speed in walking.get_time_blocks(day):
+            if end > after_unix:
+                continue
+            else:
+                new_start = max(after_unix, start)
+                assert end > new_start
+                yield new_start, end, speed
+        day += datetime.timedelta(days=1)
+
 
 def get_distance_travelled(after, period):
-    # These should be deques
-
-    block_starts = list()
-    block_speeds = list()
-    for start, speed, duration in get_blocks_after(after):
-        end = start + duration
-        if not block_starts:
-            block_starts.append(start)
-            block_speeds.append(speed)
+    blocks_after = list(get_blocks_after(after))
+    for period_block in blocks.period_windows(blocks_after, period):
+        if not period_block:
             continue
-        if end - block_starts[0] > period:
-            block_end = block
-            yield start, calculate_distance(block_starts, block_ends + , block_speeds + [speed])
+        start, _end, _speed = period_block[0]
+        start_dt = datetime.datetime.fromtimestamp(start)
+        import pdb; pdb.set_trace()    #XXX
+        yield start_dt, sum((block_end - block_start) * float(block_speed) for block_start, block_end, block_speed in period_block)
+
+DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'personal-best')
+if not os.path.isdir(DATA_DIR):
+   os.mkdir(DATA_DIR)
+
+DATA_FILE = os.path.join(DATA_DIR, 'data')
+
 
 if args.action == 'five':
     storer = BestStorer('five')
-    PersonalBestTracker(storer
+    getter = lambda after: get_distance_travelled(after, 300)
+    print PersonalBestTracker(getter, storer).update()

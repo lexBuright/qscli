@@ -6,17 +6,23 @@
 import argparse
 import datetime
 import decimal
+import json
+import logging
 import subprocess
 import sys
+import time
 import unittest
 
 import walking
 from histogram import Histogram
 
+LOGGER = logging.getLogger()
+
 
 def backticks(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
     result, _ = process.communicate(command)
+    LOGGER.debug('Running %r (%r)', command, ' '.join(command))
     if process.returncode != 0:
         raise Exception(
             '{!r} returned non-zero return code {!r}'.format(
@@ -27,6 +33,7 @@ def backticks(command):
 bt = backticks
 
 PARSER = argparse.ArgumentParser(description='Keep track of exercise')
+PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 parsers = PARSER.add_subparsers(dest='action')
 parsers.add_parser('aggregates')
 parsers.add_parser('start')
@@ -38,6 +45,10 @@ parsers.add_parser('speed-down')
 parsers.add_parser('show')
 parsers.add_parser('show-all')
 parsers.add_parser('daily-aggregates')
+parsers.add_parser('start-sprint')
+parsers.add_parser('stop-sprint')
+record_sprint = parsers.add_parser('record-sprint')
+record_sprint.add_argument('duration', type=int, help='How long to sprint for')
 parsers.add_parser('test')
 versus = parsers.add_parser('versus')
 versus.add_argument(
@@ -47,8 +58,6 @@ versus.add_argument(
     help='How many days ago to compare to')
 parsers.add_parser('reset')
 
-
-args = PARSER.parse_args()
 
 def aggregates_for_speeds(time_at_speeds):
     time = time_at_speeds.total()
@@ -139,6 +148,12 @@ class TrackTest(unittest.TestCase):
 
 def main():
     #pylint: disable=too-many-branches
+    args = PARSER.parse_args()
+    if args.debug:
+        print 'Debug logging'
+        logging.basicConfig(level=logging.DEBUG)
+
+
     if args.action == 'start':
         walking.start_walking()
     elif args.action == 'incline-up':
@@ -160,6 +175,20 @@ def main():
             walking.get_speed_histogram_for_day(datetime.date.today()))
     elif args.action == 'stop':
         walking.stop()
+    elif args.action == 'start-sprint':
+        start_sprint('free')
+    elif args.action == 'stop-sprint':
+        stop_sprint('free')
+    elif args.action == 'record-sprint':
+        duration = args.duration
+        display_period = 30
+        start = time.time()
+        start_sprint(duration)
+        end = start + duration
+        while time.time() < end:
+            time.sleep(min(end - time.time(), display_period))
+            print time.time() - start
+        stop_sprint(duration)
     elif args.action == 'versus':
         print 'Today versus {} days ago'.format(args.days)
         time_at_speed1 = walking.get_speed_histogram_for_day(
@@ -175,6 +204,19 @@ def main():
         unittest.main()
     else:
         raise ValueError(args.action)
+
+
+def start_sprint(duration):
+    backticks('superwatch.py start walking.sprint.{}'.format(duration))
+
+def stop_sprint(duration):
+    backticks('superwatch.py stop walking.sprint.{}'.format(duration))
+    result = backticks('superwatch.py show walking.sprint.{} --json'.format(duration))
+    data = json.loads(result)
+    distance = walking.get_distance(start=data['start'], end=data['stop'])
+    backticks('cli-score.py store walking.sprint.{} {}'.format(duration, distance))
+    print backticks('cli-score.py summary walking.sprint.{}'.format(duration))
+
 
 
 if __name__ == '__main__':
