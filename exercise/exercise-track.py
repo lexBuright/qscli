@@ -59,12 +59,22 @@ parsers.add_parser('stop-sprint')
 record_sprint = parsers.add_parser('record-sprint')
 record_sprint.add_argument('duration', type=int, help='How long to sprint for')
 parsers.add_parser('test')
+
+rep_versus = parsers.add_parser('rep-versus')
+rep_versus.add_argument(
+    'days',
+    default=1,
+    type=int,
+    help='How many days ago to compare to')
+
 versus = parsers.add_parser('versus')
+
 versus.add_argument(
     'days',
     default=1,
     type=int,
     help='How many days ago to compare to')
+
 parsers.add_parser('reset')
 
 
@@ -210,6 +220,17 @@ def main():
             time.sleep(min(end - time.time(), display_period))
             print time.time() - start
         stop_sprint(duration)
+    elif args.action == 'rep-versus':
+        result = backticks([
+            'cli-count.py',
+            'compare',
+            '{} days ago'.format(args.days),
+            '+1d',
+            'today',
+            '+1d',
+            '--sort',
+            'shortfall'])
+        print '\n'.join([line.split('.', 1)[1] for line in result.splitlines() if line.startswith('exercise.')])
     elif args.action == 'versus':
         print 'Today versus {} days ago'.format(args.days)
         time_at_speed1 = walking.get_speed_histogram_for_day(
