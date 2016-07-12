@@ -18,10 +18,13 @@ from histogram import Histogram
 
 LOGGER = logging.getLogger()
 
+def backticks(command, stdin=None):
+    if stdin:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    else:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE)
 
-def backticks(command):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
-    result, _ = process.communicate(command)
+    result, _ = process.communicate(stdin)
     LOGGER.debug('Running %r (%r)', command, ' '.join(command))
     if process.returncode != 0:
         raise Exception(
@@ -29,8 +32,6 @@ def backticks(command):
                 command,
                 process.returncode))
     return result
-
-bt = backticks
 
 PARSER = argparse.ArgumentParser(description='Keep track of exercise')
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
@@ -44,6 +45,14 @@ parsers.add_parser('incline-down')
 parsers.add_parser('speed-down')
 parsers.add_parser('show')
 parsers.add_parser('show-all')
+
+# repetitions
+rep_start = parsers.add_parser('rep-start')
+rep_start.add_argument('exercise_name', type=str, help='Name of exercise')
+parsers.add_parser('rep')
+note_parser = parsers.add_parser('rep-note')
+note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
+
 parsers.add_parser('daily-aggregates')
 parsers.add_parser('start-sprint')
 parsers.add_parser('stop-sprint')
@@ -153,7 +162,6 @@ def main():
         print 'Debug logging'
         logging.basicConfig(level=logging.DEBUG)
 
-
     if args.action == 'start':
         walking.start_walking()
     elif args.action == 'incline-up':
@@ -168,6 +176,19 @@ def main():
         walking.show()
     elif args.action == 'show-all':
         walking.show_all()
+    elif args.action == 'rep-start':
+        exercise_name = 'exercise.{}'.format(args.exercise_name)
+        backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
+        backticks(['cli-count.py', 'new-set', exercise_name])
+        backticks(['cli-score.py', 'store', exercise_name, '0'])
+    elif args.action == 'rep-note':
+        backticks(['cli-count.py', 'note', args.note])
+    elif args.action == 'rep':
+        exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+        backticks(['cli-count.py', 'incr', exercise_name])
+        count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
+        backticks(['cli-score.py', 'update', exercise_name, count])
+        print backticks(['cli-score.py', 'summary', exercise_name])
     elif args.action == 'aggregates':
         aggregates_for_speeds(walking.get_current_speed_histogram())
     elif args.action == 'daily-aggregates':
@@ -205,17 +226,16 @@ def main():
     else:
         raise ValueError(args.action)
 
-
 def start_sprint(duration):
-    backticks('superwatch.sh start walking.sprint.{}'.format(duration))
+    backticks(['superwatch.sh', 'start', 'walking.sprint.{}'.format(duration)])
 
 def stop_sprint(duration):
-    backticks('superwatch.sh stop walking.sprint.{}'.format(duration))
-    result = backticks('superwatch.sh show walking.sprint.{} --json'.format(duration))
+    backticks(['superwatch.sh', 'stop', 'walking.sprint.{}'.format(duration)])
+    result = backticks(['superwatch.sh', 'show', '--json', 'walking.sprint.{}'.format(duration)])
     data = json.loads(result)
     distance = walking.get_distance(start=data['start'], end=data['stop'])
-    backticks('cli-score.py store walking.sprint.{} {}'.format(duration, distance))
-    print backticks('cli-score.py summary walking.sprint.{}'.format(duration))
+    backticks(['cli-score.py', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
+    print backticks(['cli-score.py', 'summary', 'walking.sprint.{}'.format(duration)])
 
 
 
