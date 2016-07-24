@@ -23,79 +23,183 @@ from histogram import Histogram
 
 LOGGER = logging.getLogger()
 
-def backticks(command, stdin=None):
-    if stdin:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-    else:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE)
-
-    result, _ = process.communicate(stdin)
-    LOGGER.debug('Running %r (%r)', command, ' '.join(command))
-    if process.returncode != 0:
-        raise Exception(
-            '{!r} returned non-zero return code {!r}'.format(
-                command,
-                process.returncode))
-    return result
-
-PARSER = argparse.ArgumentParser(description='Keep track of exercise')
-PARSER.add_argument('--debug', action='store_true', help='Print debug output')
-parsers = PARSER.add_subparsers(dest='action')
-parsers.add_parser('aggregates')
-parsers.add_parser('start')
-parsers.add_parser('stop')
-parsers.add_parser('incline-up')
-parsers.add_parser('speed-up')
-parsers.add_parser('incline-down')
-parsers.add_parser('speed-down')
-parsers.add_parser('show')
-parsers.add_parser('show-all')
-
+ARROW = {True: ">", False: "<"}
 PROMPT = 'PROMPT'
 
-rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a particular exercise')
-rep_set_score.add_argument('--exercise', type=str)
-rep_set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
-rep_set_score.add_argument('--score', type=float)
-rep_set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
-rep_set_score.add_argument('--days-ago', '-A', type=int, help='Only set scores for exercises you did this many days ago')
 
-ignore = parsers.add_parser('rep-ignore', help='Ignore these activities today')
-ignore.add_argument('activity', type=str, help='', nargs='*')
-ignore.add_argument('--clear', action='store_true', help='Clear ignore list')
+DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
+if not os.path.isdir(DATA_DIR):
+   os.mkdir(DATA_DIR)
 
+DATA_FILE = os.path.join(DATA_DIR, 'data')
 
-# repetitions
-rep_start = parsers.add_parser('rep-start')
-rep_start.add_argument('exercise_name', type=str, help='Name of exercise')
-parsers.add_parser('rep')
-note_parser = parsers.add_parser('rep-note')
-note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
+def main():
+    #pylint: disable=too-many-branches
+    parser = build_parser()
+    args = parser.parse_args()
+    if args.debug:
+        print 'Debug logging'
+        logging.basicConfig(level=logging.DEBUG)
 
-parsers.add_parser('daily-aggregates')
-parsers.add_parser('start-sprint')
-parsers.add_parser('stop-sprint')
-record_sprint = parsers.add_parser('record-sprint')
-record_sprint.add_argument('duration', type=int, help='How long to sprint for')
-parsers.add_parser('test')
+    if args.action == 'start':
+        walking.start_walking()
+    elif args.action == 'incline-up':
+        walking.change_incline(1)
+    elif args.action == 'incline-down':
+        walking.change_incline(-1)
+    elif args.action == 'speed-up':
+        walking.change_speed(1)
+    elif args.action == 'speed-down':
+        walking.change_speed(-1)
+    elif args.action == 'show':
+        walking.show()
+    elif args.action == 'show-all':
+        walking.show_all()
+    elif args.action == 'rep-start':
+        exercise_name = 'exercise.{}'.format(args.exercise_name)
+        backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
+        backticks(['cli-count.py', 'new-set', exercise_name])
+        backticks(['cli-score.py', 'store', exercise_name, '0'])
+    elif args.action == 'rep-note':
+        backticks(['cli-count.py', 'note', args.note])
+    elif args.action == 'rep':
+        record_rep()
+    elif args.action == 'aggregates':
+        aggregates_for_speeds(walking.get_current_speed_histogram())
+    elif args.action == 'daily-aggregates':
+        aggregates_for_speeds(
+            walking.get_speed_histogram_for_day(datetime.date.today()))
+    elif args.action == 'stop':
+        walking.stop()
+    elif args.action == 'start-sprint':
+        start_sprint('free')
+    elif args.action == 'stop-sprint':
+        stop_sprint('free')
+    elif args.action == 'record-sprint':
+        duration = args.duration
+        display_period = 30
+        start = time.time()
+        start_sprint(duration)
+        end = start + duration
+        while time.time() < end:
+            time.sleep(min(end - time.time(), display_period))
+            print time.time() - start
+        stop_sprint(duration)
+    elif args.action == 'rep-versus':
+        show_rep_comparison(args.days_ago)
+    elif args.action == 'rep-set-score':
+        # Perhaps this could all be done
+        #    better with a single configuration file edited hand
+        #    but to actually be useable this
+        #    needs to be easy and *fun* to change
+        exercise_set_score(args.exercise, args.days_ago, args.score)
+    elif args.action == 'rep-ignore':
+        activities = args.activity or []
+        with with_data(DATA_FILE) as data:
+            ignore_list = Data.get_to_ignore(data)
 
-rep_versus = parsers.add_parser('rep-versus')
-rep_versus.add_argument(
-    'days_ago',
-    default=1,
-    type=int,
-    help='How many days ago to compare to')
+            if args.clear:
+                ignore_list = []
 
-versus = parsers.add_parser('versus')
+            ignore_list = sorted(set(ignore_list + ['exercise.' + activity for activity in activities]))
+            Data.set_to_ignore(data, ignore_list)
 
-versus.add_argument(
-    'days',
-    default=1,
-    type=int,
-    help='How many days ago to compare to')
+        print '\n'.join(ignore_list)
+    elif args.action == 'versus':
+        print 'Today versus {} days ago'.format(args.days)
+        time_at_speed1 = walking.get_speed_histogram_for_day(
+            datetime.date.today())
+        time_at_speed2 = walking.get_speed_histogram_for_day(
+            (datetime.datetime.now() - datetime.timedelta(days=args.days)).date())
+        versus_clocks(time_at_speed1, time_at_speed2)
+    elif args.action == 'reset':
+        walking.reset_settings()
+        print 'Speed and incline set to their minimum'
+    elif args.action == 'test':
+        sys.argv[1:] = []
+        unittest.main()
+    else:
+        raise ValueError(args.action)
 
-parsers.add_parser('reset')
+def record_rep():
+    exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+    print 'Count:', exercise_name
+    backticks(['cli-count.py', 'incr', exercise_name])
 
+    events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
+    if events:
+        start = events['events'][0]['time']
+        end = events['events'][-1]['time']
+        duration = end - start
+    else:
+        duration = 0
+
+    print 'Duration: {:.0f}'.format(duration)
+
+    count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
+    count = int(count.strip())
+    rate = count / duration if (count and duration) else 0
+
+    print 'Rate: {:.2f}'.format(rate)
+    backticks(['cli-score.py', 'update', exercise_name, str(count)])
+    print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
+
+def build_parser():
+    parser = argparse.ArgumentParser(description='Keep track of exercise')
+    parser.add_argument('--debug', action='store_true', help='Print debug output')
+    parsers = parser.add_subparsers(dest='action')
+    parsers.add_parser('aggregates')
+    parsers.add_parser('start')
+    parsers.add_parser('stop')
+    parsers.add_parser('incline-up')
+    parsers.add_parser('speed-up')
+    parsers.add_parser('incline-down')
+    parsers.add_parser('speed-down')
+    parsers.add_parser('show')
+    parsers.add_parser('show-all')
+
+    rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a particular exercise')
+    rep_set_score.add_argument('--exercise', type=str)
+    rep_set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+    rep_set_score.add_argument('--score', type=float)
+    rep_set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+    rep_set_score.add_argument('--days-ago', '-A', type=int, help='Only set scores for exercises you did this many days ago')
+
+    ignore = parsers.add_parser('rep-ignore', help='Ignore these activities today')
+    ignore.add_argument('activity', type=str, help='', nargs='*')
+    ignore.add_argument('--clear', action='store_true', help='Clear ignore list')
+
+    # repetitions
+    rep_start = parsers.add_parser('rep-start')
+    rep_start.add_argument('exercise_name', type=str, help='Name of exercise')
+    parsers.add_parser('rep')
+    note_parser = parsers.add_parser('rep-note')
+    note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
+
+    parsers.add_parser('daily-aggregates')
+    parsers.add_parser('start-sprint')
+    parsers.add_parser('stop-sprint')
+    record_sprint = parsers.add_parser('record-sprint')
+    record_sprint.add_argument('duration', type=int, help='How long to sprint for')
+    parsers.add_parser('test')
+
+    rep_versus = parsers.add_parser('rep-versus')
+    rep_versus.add_argument(
+        'days_ago',
+        default=1,
+        type=int,
+        help='How many days ago to compare to')
+
+    versus = parsers.add_parser('versus')
+
+    versus.add_argument(
+        'days',
+        default=1,
+        type=int,
+        help='How many days ago to compare to')
+
+    parsers.add_parser('reset')
+    return parser
 
 def aggregates_for_speeds(time_at_speeds):
     time = time_at_speeds.total()
@@ -153,7 +257,6 @@ def versus_clocks(time_at_speed1, time_at_speed2):
             time_at_speed2.quantile_at_value(current_speed),
             remaining_hist.quantile_at_value(current_speed))
 
-ARROW = {True: ">", False: "<"}
 
 class TrackTest(unittest.TestCase):
     def test_count_to_quantiles(self):
@@ -183,114 +286,6 @@ class TrackTest(unittest.TestCase):
         hist1 = Histogram({1:10, 2:5, 4:5, 7:1})
         hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
         self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
-
-def main():
-    #pylint: disable=too-many-branches
-    args = PARSER.parse_args()
-    if args.debug:
-        print 'Debug logging'
-        logging.basicConfig(level=logging.DEBUG)
-
-    if args.action == 'start':
-        walking.start_walking()
-    elif args.action == 'incline-up':
-        walking.change_incline(1)
-    elif args.action == 'incline-down':
-        walking.change_incline(-1)
-    elif args.action == 'speed-up':
-        walking.change_speed(1)
-    elif args.action == 'speed-down':
-        walking.change_speed(-1)
-    elif args.action == 'show':
-        walking.show()
-    elif args.action == 'show-all':
-        walking.show_all()
-    elif args.action == 'rep-start':
-        exercise_name = 'exercise.{}'.format(args.exercise_name)
-        backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
-        backticks(['cli-count.py', 'new-set', exercise_name])
-        backticks(['cli-score.py', 'store', exercise_name, '0'])
-    elif args.action == 'rep-note':
-        backticks(['cli-count.py', 'note', args.note])
-    elif args.action == 'rep':
-        exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
-        print 'Count:', exercise_name
-        backticks(['cli-count.py', 'incr', exercise_name])
-
-        events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
-        if events:
-            start = events['events'][0]['time']
-            end = events['events'][-1]['time']
-            duration = end - start
-        else:
-            duration = 0
-
-        print 'Duration: {:.0f}'.format(duration)
-
-        count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
-        count = int(count.strip())
-        rate = count / duration if (count and duration) else 0
-
-        print 'Rate: {:.2f}'.format(rate)
-        backticks(['cli-score.py', 'update', exercise_name, str(count)])
-        print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
-    elif args.action == 'aggregates':
-        aggregates_for_speeds(walking.get_current_speed_histogram())
-    elif args.action == 'daily-aggregates':
-        aggregates_for_speeds(
-            walking.get_speed_histogram_for_day(datetime.date.today()))
-    elif args.action == 'stop':
-        walking.stop()
-    elif args.action == 'start-sprint':
-        start_sprint('free')
-    elif args.action == 'stop-sprint':
-        stop_sprint('free')
-    elif args.action == 'record-sprint':
-        duration = args.duration
-        display_period = 30
-        start = time.time()
-        start_sprint(duration)
-        end = start + duration
-        while time.time() < end:
-            time.sleep(min(end - time.time(), display_period))
-            print time.time() - start
-        stop_sprint(duration)
-    elif args.action == 'rep-versus':
-        show_rep_comparison(args.days_ago)
-    elif args.action == 'rep-set-score':
-        # Perhaps this could all be done
-        #    better with a single configuration file edited hand
-        #    but to actually be useable this
-        #    needs to be easy and *fun* to change
-        exercise_set_score(args.exercise, args.days_ago, args.score)
-
-    elif args.action == 'rep-ignore':
-        activities = args.activity or []
-        with with_data(DATA_FILE) as data:
-            ignore_list = Data.get_to_ignore(data)
-
-            if args.clear:
-                ignore_list = []
-
-            ignore_list = sorted(set(ignore_list + ['exercise.' + activity for activity in activities]))
-            Data.set_to_ignore(data, ignore_list)
-
-        print '\n'.join(ignore_list)
-    elif args.action == 'versus':
-        print 'Today versus {} days ago'.format(args.days)
-        time_at_speed1 = walking.get_speed_histogram_for_day(
-            datetime.date.today())
-        time_at_speed2 = walking.get_speed_histogram_for_day(
-            (datetime.datetime.now() - datetime.timedelta(days=args.days)).date())
-        versus_clocks(time_at_speed1, time_at_speed2)
-    elif args.action == 'reset':
-        walking.reset_settings()
-        print 'Speed and incline set to their minimum'
-    elif args.action == 'test':
-        sys.argv[1:] = []
-        unittest.main()
-    else:
-        raise ValueError(args.action)
 
 def show_rep_comparison(days_ago):
     today_json = json.loads(backticks([
@@ -353,13 +348,6 @@ def stop_sprint(duration):
     backticks(['cli-score.py', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
     print backticks(['cli-score.py', 'summary', 'walking.sprint.{}'.format(duration)])
 
-def read_json(filename):
-    if os.path.exists(filename):
-        with open(filename) as stream:
-            return json.loads(stream.read())
-    else:
-        return dict()
-
 class ScoreTimeSeries(object):
     def __init__(self, time_series):
         self.time_series = time_series
@@ -397,12 +385,6 @@ def exercise_set_score(exercise, days_ago, score):
     with with_data(DATA_FILE) as data:
         Data.set_exercise_score(data, exercise, score)
 
-
-DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
-if not os.path.isdir(DATA_DIR):
-   os.mkdir(DATA_DIR)
-
-DATA_FILE = os.path.join(DATA_DIR, 'data')
 
 @contextlib.contextmanager
 def with_data(data_file):
@@ -455,12 +437,36 @@ class Data(object):
         data['versus.rep.ignore'] = ignore_list
         data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
 
+
+# UTILITY FUNCTIONS
+
 def dict_replace(dict, **kwargs):
     updated = copy.copy(dict)
     for key, value in kwargs.items():
         updated[key] = value
     return updated
 
+def backticks(command, stdin=None):
+    if stdin:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    else:
+        process = subprocess.Popen(command, stdout=subprocess.PIPE)
+
+    result, _ = process.communicate(stdin)
+    LOGGER.debug('Running %r (%r)', command, ' '.join(command))
+    if process.returncode != 0:
+        raise Exception(
+            '{!r} returned non-zero return code {!r}'.format(
+                command,
+                process.returncode))
+    return result
+
+def read_json(filename):
+    if os.path.exists(filename):
+        with open(filename) as stream:
+            return json.loads(stream.read())
+    else:
+        return dict()
 
 if __name__ == '__main__':
     main()
