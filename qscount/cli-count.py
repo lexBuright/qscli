@@ -1,6 +1,5 @@
 #!/usr/bin/python
 """
-
 cli-count.py # Count some things
 cli-count.py show
 cli-count.py clear
@@ -31,6 +30,11 @@ import fasteners
 
 CURRENT = 'CURRENT'
 
+def get_set_id(string):
+    if string == 'CURRENT':
+        return CURRENT
+    else:
+        return int(string)
 
 def counter_arg(parser):
     return parser.add_argument('counter', type=str, default='DEFAULT', help='What are you counter', nargs='?')
@@ -47,6 +51,11 @@ new_set.add_argument('counter', type=str, help='What are you counting')
 
 incr = PARSERS.add_parser('incr', help='Increment a counter')
 counter_arg(incr)
+
+log = PARSERS.add_parser('log', help='Show when each event occurred')
+counter_arg(log)
+log.add_argument('--set', type=get_set_id, help='Show the count for a particular set (CURRENT for the current set)')
+log.add_argument('--json', action='store_true', help='Output in machine readable json')
 
 move = PARSERS.add_parser('move', help='Rename a counter')
 move.add_argument('before', type=str)
@@ -99,8 +108,15 @@ def compare_sort_method(name):
     else:
         raise ValueError(name)
 
+def days_ago_argument(parser):
+    parser.add_argument('--days-ago', '-A', type=days_ago, dest='date', help='Summary events on this day')
+
+def json_argument(parser):
+    parser.add_argument('--json', action='store_true', help='Output results in machine-readable json')
+
 summary = PARSERS.add_parser('summary', help='Summarize counts')
-summary.add_argument('--days-ago', '-A', type=days_ago, dest='date', help='Summary events on this day')
+days_ago_argument(summary)
+json_argument(summary)
 summary.add_argument('--regexp', '-x', type=re.compile, help='Only show counters matching this regular expression')
 summary.add_argument('--zeros', '-0', action='store_true', help='Display counts even if no events happened during *this* period')
 
@@ -118,13 +134,8 @@ compare.add_argument('--regex', '-x', type=re.compile, help='Only display counte
 delete_parser = PARSERS.add_parser('delete', help='List counters')
 delete_parser.add_argument('counter', type=str, help='What are you counter')
 
-PARSERS.add_parser('list', help='List counters')
-
-def get_set_id(string):
-    if string == 'CURRENT':
-        return CURRENT
-    else:
-        return int(string)
+list_parser = PARSERS.add_parser('list', help='List counters')
+days_ago_argument(list_parser)
 
 count_parser = PARSERS.add_parser('count', help='Show the count')
 counter_arg(count_parser)
@@ -161,8 +172,10 @@ def run(args):
             return str(counter.incr(options.counter))
         elif options.command == 'count':
             return str(counter.count(options.counter, options.set))
+        elif options.command == 'log':
+            return str(counter.log(options.counter, options.set, options.json))
         elif options.command == 'summary':
-            return str(counter.summary(options.date, options.regexp, options.zeros))
+            return str(counter.summary(options.date, options.regexp, options.zeros, options.json))
         elif options.command == 'compare':
             end1 = options.start1 + options.end1 if isinstance(options.end1, datetime.timedelta) else options.end1
             end2 = options.start2 + options.end2 if isinstance(options.end2, datetime.timedelta) else options.end2
@@ -171,7 +184,7 @@ def run(args):
         elif options.command == 'note':
             return str(counter.note(options.counter, options.note))
         elif options.command == 'list':
-            return str(counter.list())
+            return str(counter.list(options.date))
         else:
             raise ValueError(options.command)
 
@@ -224,12 +237,35 @@ class Counter(object):
 
             return len(events)
 
+    def log(self, name, set_id, is_json):
+        with self.with_counter(name) as counter:
+            if set_id == CURRENT:
+                set_id = counter['set']
+
+            events = counter['events']
+            events = [event for event in events if set_id is None or event.get('set', None) == set_id]
+
+            if not is_json:
+                string_result = '\n'.join(datetime.datetime.fromtimestamp(event['time']).isoformat() for event in events)
+                return string_result
+            else:
+                return json.dumps(dict(events=events))
+
     def delete(self, name):
         del self._data['counters'][name]
         return ''
 
-    def list(self):
-        return '\n'.join(sorted(self._data['counters']))
+    def list(self, date=None):
+        counters = sorted(self._data['counters'])
+        if days_ago is not None:
+            new_counters = []
+            for c in counters:
+                counter_events = self._data['counters'][c]['events']
+                if filter_events(counter_events, date=date):
+                    new_counters.append(c)
+            counters = new_counters
+
+        return '\n'.join(counters)
 
     def note(self, name, note):
         with self.with_counter(name) as counter:
@@ -267,23 +303,27 @@ class Counter(object):
                 target_counter['set'] = max([event['set'] for event in target_counter['events']]) + 1
 
 
-    def summary(self, date, regexp, show_zeros):
-        result = ''
+    def summary(self, date, regexp, show_zeros, json_format):
+        counts = []
         for name, counter in sorted(self._data['counters'].items()):
             if regexp and not regexp.search(name):
                 continue
+
             events = counter['events']
-            if date:
-                events = [event for event in events if datetime.datetime.fromtimestamp(event['time']).date() == date]
+            events = filter_events(events, date=date)
 
             count = len(events)
 
             if count == 0 and not show_zeros:
                 continue
             else:
-                result += '{}: {}\n'.format(name, count)
+                counts.append((name, count))
 
-        return result
+        if json_format:
+            json_counts = [dict(name=name, count=count) for (name, count) in counts]
+            return json.dumps(dict(counts=json_counts, indent=4))
+        else:
+            return '\n'.join('{}: {}'.format(action, count) for action, count in sorted(counts))
 
     def compare(self, period1_start, period1_end, period2_start, period2_end, sort_func=compare_sort_name, is_json=False, regex=None):
         results = []
@@ -308,6 +348,11 @@ class Counter(object):
         else:
             return '\n'.join('{} {} {}'.format(*result) for result in results)
 
+def filter_events(events, date=None):
+    events = events[:]
+    if date:
+        events = [event for event in events if datetime.datetime.fromtimestamp(event['time']).date() == date]
+    return events
 
 def read_json(filename):
     if os.path.exists(filename):
