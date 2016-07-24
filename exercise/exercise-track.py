@@ -81,7 +81,7 @@ parsers.add_parser('test')
 
 rep_versus = parsers.add_parser('rep-versus')
 rep_versus.add_argument(
-    'days',
+    'days_ago',
     default=1,
     type=int,
     help='How many days ago to compare to')
@@ -256,55 +256,7 @@ def main():
             print time.time() - start
         stop_sprint(duration)
     elif args.action == 'rep-versus':
-        today_json = json.loads(backticks([
-            'cli-count.py',
-            'summary',
-            '--days-ago',
-            str(args.days),
-            '--json']))
-
-        today_counts = [
-            dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
-
-        with with_data(DATA_FILE) as data:
-            by_exercise_scores = get_exercise_scores(data)
-
-            ignore_date = data.get('versus.rep.ignore.date')
-            ignore_date = ignore_date and datetime.date(*ignore_date)
-
-            if ignore_date == datetime.date.today():
-                to_ignore = data.get('versus.rep.ignore', [])
-            else:
-                to_ignore = []
-
-        total = 0
-        uncounted = 0
-        unscored_exercises = set()
-        for count in today_counts:
-            score = by_exercise_scores.get(count['name'])
-            if score:
-                activity_total = score.last_value() * count['count']
-                total += activity_total
-            else:
-                uncounted += count['count']
-                unscored_exercises.add(count['name'])
-
-        print 'Points:', total
-        print 'Uncounted:', uncounted
-        print 'Unscored activities', ' '.join(sorted(unscored_exercises))
-
-        results = json.loads(backticks([
-            'cli-count.py',
-            'compare',
-            '{} days ago'.format(args.days), '+1d',
-            'today', '+1d',
-            '--regex', '^exercise\\.',
-            '--sort', 'shortfall',
-            '--json']))
-
-        results = [result for result in results if result[0] not in to_ignore]
-        print '\n'.join(['{} {} {}'.format(*r) for r in results])
-
+        show_rep_comparison(args.days_ago)
     elif args.action == 'rep-set-score':
         # Perhaps this could all be done
         #    better with a single configuration file edited hand
@@ -340,7 +292,55 @@ def main():
     else:
         raise ValueError(args.action)
 
+def show_rep_comparison(days_ago):
+    today_json = json.loads(backticks([
+        'cli-count.py',
+        'summary',
+        '--days-ago',
+        str(days_ago),
+        '--json']))
 
+    today_counts = [
+        dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
+
+    with with_data(DATA_FILE) as data:
+        by_exercise_scores = get_exercise_scores(data)
+
+        ignore_date = data.get('versus.rep.ignore.date')
+        ignore_date = ignore_date and datetime.date(*ignore_date)
+
+        if ignore_date == datetime.date.today():
+            to_ignore = data.get('versus.rep.ignore', [])
+        else:
+            to_ignore = []
+
+    total = 0
+    uncounted = 0
+    unscored_exercises = set()
+    for count in today_counts:
+        score = by_exercise_scores.get(count['name'])
+        if score:
+            activity_total = score.last_value() * count['count']
+            total += activity_total
+        else:
+            uncounted += count['count']
+            unscored_exercises.add(count['name'])
+
+    print 'Points:', total
+    print 'Uncounted:', uncounted
+    print 'Unscored activities', ' '.join(sorted(unscored_exercises))
+
+    results = json.loads(backticks([
+        'cli-count.py',
+        'compare',
+        '{} days ago'.format(days_ago), '+1d',
+        'today', '+1d',
+        '--regex', '^exercise\\.',
+        '--sort', 'shortfall',
+        '--json']))
+
+    results = [result for result in results if result[0] not in to_ignore]
+    print '\n'.join(['{} {} {}'.format(*r) for r in results])
 
 def start_sprint(duration):
     backticks(['superwatch.sh', 'start', 'walking.sprint.{}'.format(duration)])
