@@ -1,8 +1,9 @@
 #!/usr/bin/python3
-"""Stupidly feature-complete command line tool to keep track of scores.
+"""Stupidly feature-complete command line tool to keep track of scores;
+Quickly gameify any activity.
 
-Designed to be useable programmatically, though you might like to use something like a
-database of ELK (elasticsearch logstash kibana).
+Designed to be useable programmatically, though you might  prefer to use something like a
+database of ELK (elasticsearch logstash kibana). If you being serious
 
 Example usage:
    cli-score.py store game 8
@@ -35,14 +36,20 @@ store_command = parsers.add_parser('store', help='', aliases=['s'])
 store_command.add_argument('metric', type=str)
 store_command.add_argument('value', type=float)
 
-def metric_command(parser, name):
-    command = parsers.add_parser(name, help='', aliases=['b'])
-    command.add_argument('metric', type=str)
+update_command = parsers.add_parser('update', help='', aliases=['u'])
+update_command.add_argument('metric', type=str)
+update_command.add_argument('value', type=float)
 
-metric_command(PARSER, 'best')
-metric_command(PARSER, 'mean')
-metric_command(PARSER, 'run-length')
-metric_command(PARSER, 'summary')
+def metric_command(parsers, name):
+    command = parsers.add_parser(name, help='', aliases=[name[0]])
+    command.add_argument('metric', type=str)
+    return command
+
+metric_command(parsers, 'best')
+metric_command(parsers, 'mean')
+metric_command(parsers, 'run-length')
+summary_parser = metric_command(PARSER, 'summary')
+summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
 
 def main():
     if '--test' in sys.argv[1:]:
@@ -77,10 +84,11 @@ def run(arguments):
 
     data_file = os.path.join(options.config_dir, 'data.json')
 
-
     with with_metric_data(data_file, options.metric) as metric_data:
         if options.command == 'store':
             return store(metric_data, options.value)
+        elif options.command == 'update':
+            return update(metric_data, options.value)
         elif options.command == 'best':
             return best(metric_data)
         elif options.command == 'mean':
@@ -88,7 +96,7 @@ def run(arguments):
         elif options.command == 'run-length':
             return run_length(metric_data)
         elif options.command == 'summary':
-            return summary(metric_data)
+            return summary(metric_data, options.update)
         else:
             raise ValueError(options.command)
 
@@ -102,6 +110,13 @@ def with_metric_data(data_file, metric):
 
 def store(metric_data, value):
     metric_values = metric_data.setdefault('values', [])
+    metric_values.append((time.time(), value))
+    return ''
+
+def update(metric_data, value):
+    metric_values = metric_data.setdefault('values', [])
+    if metric_values:
+        metric_values.pop()
     metric_values.append((time.time(), value))
     return ''
 
@@ -128,22 +143,67 @@ def run_length(metric_data):
     result = len(list(itertools.takewhile(lambda x: x[0] > x[1], pairs))) + 1
     return result
 
-def summary(metric_data):
+def quantile(metric_data):
+    # don't pull in numpy / scipy dependnecies
+    values = [d[1] for d in metric_data['values']]
+    if not values:
+        return None
+
+    last = metric_data['values'][-1][1]
+    lower = len([x for x in values if x <= last])
+    upper = len(values) - len([x for x in values if x > last])
+    return float(lower + upper) / 2 / len(values)
+
+def best_ratio(metric_data):
+    if len(metric_data['values']) < 1:
+        return None
+    else:
+        last = metric_data['values'][-1][1]
+        rest = [x[1] for x in metric_data['values'][:-1]]
+        if not rest or max(rest) == 0:
+            return None
+        else:
+            return last / max(rest)
+
+def summary(metric_data, update=False):
     last = metric_data['values'][-1][1]
     messages = [str(last)]
     last_rank = rank(metric_data)
-    if last_rank == 0:
+    if last_rank == 0 and len(metric_data['values']) > 1:
         messages.append('New best')
+
+    if len(metric_data['values']) == 1:
+        messages.append('First time')
 
     runl = run_length(metric_data)
     if runl > 1:
         messages.append('Run of {}'.format(runl))
     elif len(metric_data['values']) > 1:
-        messages.append('Broken run')
-        messages.append('{}st best'.format(last_rank + 1))
+        if not update:
+            messages.append('Broken run :(')
 
-    return '{}'.format(' -- '.join(messages))
+    if len(metric_data['values']) > 1:
+        messages.append('{} best'.format(ordinal(last_rank + 1)))
+        messages.append('Quantile: {:.2f}'.format(quantile(metric_data)))
+        ratio = best_ratio(metric_data)
+        if ratio is not None:
+            messages.append('Ratio of best: {:.2f}'.format(ratio))
 
+    return '{}'.format('\n'.join(messages))
+
+def ordinal(number):
+    return str(number) + {
+        '0': 'th',
+        '1': 'st',
+        '2': 'nd',
+        '3': 'rd',
+        '4': 'th',
+        '5': 'th',
+        '6': 'th',
+        '7': 'th',
+        '8': 'th',
+        '9': 'th',
+    }[str(number)[-1]]
 
 class TestCli(unittest.TestCase):
     def cli(self, command):
