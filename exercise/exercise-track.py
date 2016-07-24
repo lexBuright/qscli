@@ -4,14 +4,19 @@
 # This is to be classified as useful glue code
 
 import argparse
+import contextlib
+import copy
 import datetime
 import decimal
 import json
 import logging
+import os
 import subprocess
 import sys
 import time
 import unittest
+
+import fasteners
 
 import walking
 from histogram import Histogram
@@ -45,6 +50,20 @@ parsers.add_parser('incline-down')
 parsers.add_parser('speed-down')
 parsers.add_parser('show')
 parsers.add_parser('show-all')
+
+PROMPT = 'PROMPT'
+
+rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a particular exercise')
+rep_set_score.add_argument('--exercise', type=str)
+rep_set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+rep_set_score.add_argument('--score', type=float)
+rep_set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+rep_set_score.add_argument('--days-ago', '-A', type=int, help='Only set scores for exercises you did this many days ago')
+
+ignore = parsers.add_parser('rep-ignore', help='Ignore these activities today')
+ignore.add_argument('activity', type=str, help='', nargs='*')
+ignore.add_argument('--clear', action='store_true', help='Clear ignore list')
+
 
 # repetitions
 rep_start = parsers.add_parser('rep-start')
@@ -195,10 +214,26 @@ def main():
         backticks(['cli-count.py', 'note', args.note])
     elif args.action == 'rep':
         exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+        print 'Count:', exercise_name
         backticks(['cli-count.py', 'incr', exercise_name])
+
+        events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
+        if events:
+            start = events['events'][0]['time']
+            end = events['events'][-1]['time']
+            duration = end - start
+        else:
+            duration = 0
+
+        print 'Duration: {:.0f}'.format(duration)
+
         count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
-        backticks(['cli-score.py', 'update', exercise_name, count])
-        print backticks(['cli-score.py', 'summary', exercise_name])
+        count = int(count.strip())
+        rate = count / duration if (count and duration) else 0
+
+        print 'Rate: {:.2f}'.format(rate)
+        backticks(['cli-score.py', 'update', exercise_name, str(count)])
+        print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
     elif args.action == 'aggregates':
         aggregates_for_speeds(walking.get_current_speed_histogram())
     elif args.action == 'daily-aggregates':
@@ -221,16 +256,96 @@ def main():
             print time.time() - start
         stop_sprint(duration)
     elif args.action == 'rep-versus':
-        result = backticks([
+        today_json = json.loads(backticks([
+            'cli-count.py',
+            'summary',
+            '--days-ago',
+            str(args.days),
+            '--json']))
+
+        today_counts = [
+            dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
+
+        with with_data(DATA_FILE) as data:
+            by_exercise_scores = get_exercise_scores(data)
+
+            ignore_date = data.get('versus.rep.ignore.date')
+            ignore_date = ignore_date and datetime.date(*ignore_date)
+
+            if ignore_date == datetime.date.today():
+                to_ignore = data.get('versus.rep.ignore', [])
+            else:
+                to_ignore = []
+
+        total = 0
+        uncounted = 0
+        unscored_exercises = set()
+        for count in today_counts:
+            score = by_exercise_scores.get(count['name'])
+            if score:
+                activity_total = score[-1][1] * count['count']
+                total += activity_total
+            else:
+                uncounted += count['count']
+                unscored_exercises.add(count['name'])
+
+        print 'Points:', total
+        print 'Uncounted:', uncounted
+        print 'Unscored activities', ' '.join(sorted(unscored_exercises))
+
+        results = json.loads(backticks([
             'cli-count.py',
             'compare',
-            '{} days ago'.format(args.days),
-            '+1d',
-            'today',
-            '+1d',
-            '--sort',
-            'shortfall'])
-        print '\n'.join([line.split('.', 1)[1] for line in result.splitlines() if line.startswith('exercise.')])
+            '{} days ago'.format(args.days), '+1d',
+            'today', '+1d',
+            '--regex', '^exercise\\.',
+            '--sort', 'shortfall',
+            '--json']))
+
+        results = [result for result in results if result[0] not in to_ignore]
+        print '\n'.join(['{} {} {}'.format(*r) for r in results])
+
+    elif args.action == 'rep-set-score':
+        # Perhaps this could all be done
+        #    better with a single configuration file edited hand
+        #    but to actually be useable this
+        #    needs to be easy and *fun* to change
+
+        if args.exercise == PROMPT:
+            rep_exercises = get_rep_exercises(args.days_ago)
+            with with_data(DATA_FILE) as data:
+                scores = get_exercise_scores(data)
+
+            choices = ['{} {}'.format(exercise, scores[exercise][-1][1] if exercise in scores else 'UNKNOWN') for exercise in rep_exercises]
+            choices.sort(key=lambda x: scores[x.split()[0]][-1][1] if x.split()[0] in scores else None)
+            exercise = combo_prompt('exercise', choices).split()[0]
+        elif args.exercise is not None:
+            exercise = args.exercise
+        else:
+            raise Exception('Must specify an exercise')
+
+        if args.score == PROMPT:
+            score = float_prompt('Score:')
+        elif args.score is not None:
+            score = args.score
+        else:
+            raise Exception('Must specify a score somehow')
+
+        with with_data(DATA_FILE) as data:
+            set_exercise_score(data, exercise, score)
+
+    elif args.action == 'rep-ignore':
+        activities = args.activity or []
+        with with_data(DATA_FILE) as data:
+            ignore_list = get_to_ignore(data)
+
+            if args.clear:
+                ignore_list = []
+
+            ignore_list = sorted(set(ignore_list + ['exercise.' + activity for activity in activities]))
+            set_to_ignore(data, ignore_list)
+
+        print '\n'.join(ignore_list)
     elif args.action == 'versus':
         print 'Today versus {} days ago'.format(args.days)
         time_at_speed1 = walking.get_speed_histogram_for_day(
@@ -258,7 +373,89 @@ def stop_sprint(duration):
     backticks(['cli-score.py', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
     print backticks(['cli-score.py', 'summary', 'walking.sprint.{}'.format(duration)])
 
+def read_json(filename):
+    if os.path.exists(filename):
+        with open(filename) as stream:
+            return json.loads(stream.read())
+    else:
+        return dict()
 
+
+DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
+if not os.path.isdir(DATA_DIR):
+   os.mkdir(DATA_DIR)
+
+DATA_FILE = os.path.join(DATA_DIR, 'data')
+
+@contextlib.contextmanager
+def with_data(data_file):
+    "Read from a json file, write back to it when we are finished"
+    with fasteners.InterProcessLock(data_file + '.lck'):
+        data = read_json(data_file)
+        yield data
+        output_data = json.dumps(data)
+
+        with open(data_file, 'w') as stream:
+            stream.write(output_data)
+
+# IMPROVEMENT: we might like to bunch up things to do with reps
+
+def get_to_ignore(data):
+    ignore_date = data.get('versus.rep.ignore.date')
+    ignore_date = ignore_date and datetime.date(*ignore_date)
+
+    if ignore_date == datetime.date.today():
+        return data.get('versus.rep.ignore', [])
+    else:
+        return []
+
+def set_to_ignore(data, ignore_list):
+    today = datetime.date.today()
+    data['versus.rep.ignore'] = ignore_list
+    data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
+
+def set_exercise_score(data, exercise, score):
+    by_exercise_scores = data.setdefault('rep.scores.by.exercise', {})
+    exercise_scores = by_exercise_scores.setdefault(exercise, [])
+    exercise_scores.append((time.time(), score))
+
+def get_exercise_scores(data):
+    return data.get('rep.scores.by.exercise', {})
+
+def get_rep_exercises(days_ago=None):
+    if days_ago is not None:
+        counters = backticks(['cli-count.py', 'list', '--days-ago', str(days_ago)]).splitlines()
+    else:
+        counters = backticks(['cli-count.py', 'list']).splitlines()
+
+    exercises = [x.split('.', 1)[1]
+        for x in counters if x.startswith('exercise.')]
+    return exercises
+
+def combo_prompt(prompt, choices):
+    p = subprocess.Popen(
+        ['rofi', '-dmenu', '-p', prompt],
+        stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+    choice_string = '\n'.join(choices)
+    reply, _ = p.communicate(choice_string)
+    return reply.strip()
+
+def float_prompt(prompt):
+    while True:
+        p = subprocess.Popen(
+            ['zenity', '--entry', '--title', prompt],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        reply, _ = p.communicate('')
+        try:
+            return float(reply)
+        except ValueError:
+            time.sleep(0.5)
+
+def dict_replace(dict, **kwargs):
+    updated = copy.copy(dict)
+    for key, value in kwargs.items():
+        updated[key] = value
+    return updated
 
 if __name__ == '__main__':
     main()
