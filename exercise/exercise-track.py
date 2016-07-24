@@ -56,6 +56,7 @@ def main():
     elif args.action == 'show-all':
         walking.show_all()
     elif args.action == 'rep-start':
+        # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)
         backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
         backticks(['cli-count.py', 'new-set', exercise_name])
@@ -120,29 +121,6 @@ def main():
         unittest.main()
     else:
         raise ValueError(args.action)
-
-def record_rep():
-    exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
-    print 'Count:', exercise_name
-    backticks(['cli-count.py', 'incr', exercise_name])
-
-    events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
-    if events:
-        start = events['events'][0]['time']
-        end = events['events'][-1]['time']
-        duration = end - start
-    else:
-        duration = 0
-
-    print 'Duration: {:.0f}'.format(duration)
-
-    count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
-    count = int(count.strip())
-    rate = count / duration if (count and duration) else 0
-
-    print 'Rate: {:.2f}'.format(rate)
-    backticks(['cli-score.py', 'update', exercise_name, str(count)])
-    print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
 
 def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
@@ -214,6 +192,29 @@ def aggregates_for_speeds(time_at_speeds):
     quartile_string = ' - '.join(['{:.2}'.format(q / 3.6) for q in quartiles])
     print 'Speed quartiles', quartile_string
 
+def record_rep():
+    exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+    print 'Count:', exercise_name
+    backticks(['cli-count.py', 'incr', exercise_name])
+
+    events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
+    if events:
+        start = events['events'][0]['time']
+        end = events['events'][-1]['time']
+        duration = end - start
+    else:
+        duration = 0
+
+    print 'Duration: {:.0f}'.format(duration)
+
+    count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
+    count = int(count.strip())
+    rate = count / duration if (count and duration) else 0
+
+    print 'Rate: {:.2f}'.format(rate)
+    backticks(['cli-score.py', 'update', exercise_name, str(count)])
+    print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
+
 def versus_clocks(time_at_speed1, time_at_speed2):
     if time_at_speed2.empty():
         print 'No data to compare to'
@@ -256,36 +257,6 @@ def versus_clocks(time_at_speed1, time_at_speed2):
             current_speed,
             time_at_speed2.quantile_at_value(current_speed),
             remaining_hist.quantile_at_value(current_speed))
-
-
-class TrackTest(unittest.TestCase):
-    def test_count_to_quantiles(self):
-        hist = Histogram({0:20, 20:20, 40:20, 60:20, 80:20})
-        self.assertEquals(
-            hist.values_at_quantiles([0.0, 0.5]),
-            [0, 40])
-        self.assertEquals(
-            hist.values_at_quantiles([0.1, 0.2, 0.3, 0.4, 0.41]),
-            [0, 0, 20, 20, 40])
-
-    def test_count_to_quantiles_decimals(self):
-        hist = Histogram({
-            decimal.Decimal(0):20,
-            decimal.Decimal(20):20,
-            decimal.Decimal(40):20,
-            decimal.Decimal(60):20,
-            decimal.Decimal(80):20})
-        self.assertEquals(
-            hist.values_at_quantiles([0.0, 0.5]),
-            [0, 40])
-        self.assertEquals(
-            hist.values_at_quantiles([0.1, 0.2, 0.3, 0.4, 0.41]),
-            [0, 0, 20, 20, 40])
-
-    def test_substract(self):
-        hist1 = Histogram({1:10, 2:5, 4:5, 7:1})
-        hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
-        self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
 
 def show_rep_comparison(days_ago):
     today_json = json.loads(backticks([
@@ -397,7 +368,6 @@ def with_data(data_file):
         with open(data_file, 'w') as stream:
             stream.write(output_data)
 
-# IMPROVEMENT: we might like to bunch up things to do with reps
 
 class Data(object):
     @staticmethod
@@ -467,6 +437,38 @@ def read_json(filename):
             return json.loads(stream.read())
     else:
         return dict()
+
+
+class TrackTest(unittest.TestCase):
+    def test_count_to_quantiles(self):
+        hist = Histogram({0:20, 20:20, 40:20, 60:20, 80:20})
+        self.assertEquals(
+            hist.values_at_quantiles([0.0, 0.5]),
+            [0, 40])
+        self.assertEquals(
+            hist.values_at_quantiles([0.1, 0.2, 0.3, 0.4, 0.41]),
+            [0, 0, 20, 20, 40])
+
+    def test_count_to_quantiles_decimals(self):
+        hist = Histogram({
+            decimal.Decimal(0):20,
+            decimal.Decimal(20):20,
+            decimal.Decimal(40):20,
+            decimal.Decimal(60):20,
+            decimal.Decimal(80):20})
+        self.assertEquals(
+            hist.values_at_quantiles([0.0, 0.5]),
+            [0, 40])
+        self.assertEquals(
+            hist.values_at_quantiles([0.1, 0.2, 0.3, 0.4, 0.41]),
+            [0, 0, 20, 20, 40])
+
+    def test_substract(self):
+        hist1 = Histogram({1:10, 2:5, 4:5, 7:1})
+        hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
+        self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
+
+
 
 if __name__ == '__main__':
     main()
