@@ -381,14 +381,14 @@ def exercise_set_score(exercise, days_ago, score):
             if exercise in scores else 'UNKNOWN')
                        for exercise in rep_exercises]
 
-        exercise = combo_prompt('exercise', choices).split()[0]
+        exercise = guiutils.combo_prompt('exercise', choices).split()[0]
     elif exercise is not None:
         exercise = exercise
     else:
         raise Exception('Must specify an exercise')
 
     if score == PROMPT:
-        score = float_prompt('Score:')
+        score = guiutils.float_prompt('Score:')
     elif score is not None:
         score = score
     else:
@@ -396,8 +396,6 @@ def exercise_set_score(exercise, days_ago, score):
 
     with with_data(DATA_FILE) as data:
         Data.set_exercise_score(data, exercise, score)
-
-
 
 
 DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
@@ -456,26 +454,6 @@ class Data(object):
         today = datetime.date.today()
         data['versus.rep.ignore'] = ignore_list
         data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
-
-
-def combo_prompt(prompt, choices):
-    p = subprocess.Popen(
-        ['rofi', '-dmenu', '-p', prompt],
-        stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-    choice_string = '\n'.join(choices)
-    reply, _ = p.communicate(choice_string)
-    return reply.strip()
-
-def float_prompt(prompt):
-    while True:
-        p = subprocess.Popen(
-            ['zenity', '--entry', '--title', prompt],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        reply, _ = p.communicate('')
-        try:
-            return float(reply)
-        except ValueError:
-            time.sleep(0.5)
 
 def dict_replace(dict, **kwargs):
     updated = copy.copy(dict)
