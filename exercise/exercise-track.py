@@ -267,13 +267,13 @@ def main():
     elif args.action == 'rep-ignore':
         activities = args.activity or []
         with with_data(DATA_FILE) as data:
-            ignore_list = get_to_ignore(data)
+            ignore_list = Data.get_to_ignore(data)
 
             if args.clear:
                 ignore_list = []
 
             ignore_list = sorted(set(ignore_list + ['exercise.' + activity for activity in activities]))
-            set_to_ignore(data, ignore_list)
+            Data.set_to_ignore(data, ignore_list)
 
         print '\n'.join(ignore_list)
     elif args.action == 'versus':
@@ -304,7 +304,7 @@ def show_rep_comparison(days_ago):
         dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
 
     with with_data(DATA_FILE) as data:
-        by_exercise_scores = get_exercise_scores(data)
+        by_exercise_scores = Data.get_exercise_scores(data)
 
         ignore_date = data.get('versus.rep.ignore.date')
         ignore_date = ignore_date and datetime.date(*ignore_date)
@@ -369,9 +369,9 @@ class ScoreTimeSeries(object):
 
 def exercise_set_score(exercise, days_ago, score):
     if exercise == PROMPT:
-        rep_exercises = get_rep_exercises(days_ago)
+        rep_exercises = Data.get_rep_exercises(days_ago)
         with with_data(DATA_FILE) as data:
-            scores = get_exercise_scores(data)
+            scores = Data.get_exercise_scores(data)
 
         rep_exercises.sort(key=lambda x: scores[x].last_value() if x in scores else None)
 
@@ -395,7 +395,7 @@ def exercise_set_score(exercise, days_ago, score):
         raise Exception('Must specify a score somehow')
 
     with with_data(DATA_FILE) as data:
-        set_exercise_score(data, exercise, score)
+        Data.set_exercise_score(data, exercise, score)
 
 
 
@@ -419,37 +419,44 @@ def with_data(data_file):
 
 # IMPROVEMENT: we might like to bunch up things to do with reps
 
-def get_to_ignore(data):
-    ignore_date = data.get('versus.rep.ignore.date')
-    ignore_date = ignore_date and datetime.date(*ignore_date)
+class Data(object):
+    @staticmethod
+    def get_rep_exercises(days_ago=None):
+        if days_ago is not None:
+            counters = backticks(['cli-count.py', 'list', '--days-ago', str(days_ago)]).splitlines()
+        else:
+            counters = backticks(['cli-count.py', 'list']).splitlines()
 
-    if ignore_date == datetime.date.today():
-        return data.get('versus.rep.ignore', [])
-    else:
-        return []
+        exercises = [x.split('.', 1)[1]
+            for x in counters if x.startswith('exercise.')]
+        return exercises
 
-def set_to_ignore(data, ignore_list):
-    today = datetime.date.today()
-    data['versus.rep.ignore'] = ignore_list
-    data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
+    @staticmethod
+    def get_exercise_scores(data):
+        return {k: ScoreTimeSeries(v) for (k, v) in data.get('rep.scores.by.exercise', {}).items()}
 
-def set_exercise_score(data, exercise, score):
-    by_exercise_scores = data.setdefault('rep.scores.by.exercise', {})
-    exercise_scores = by_exercise_scores.setdefault(exercise, [])
-    exercise_scores.append((time.time(), score))
+    @staticmethod
+    def set_exercise_score(data, exercise, score):
+        by_exercise_scores = data.setdefault('rep.scores.by.exercise', {})
+        exercise_scores = by_exercise_scores.setdefault(exercise, [])
+        exercise_scores.append((time.time(), score))
 
-def get_exercise_scores(data):
-    return {k: ScoreTimeSeries(v) for (k, v) in data.get('rep.scores.by.exercise', {}).items()}
+    @staticmethod
+    def get_to_ignore(data):
+        ignore_date = data.get('versus.rep.ignore.date')
+        ignore_date = ignore_date and datetime.date(*ignore_date)
 
-def get_rep_exercises(days_ago=None):
-    if days_ago is not None:
-        counters = backticks(['cli-count.py', 'list', '--days-ago', str(days_ago)]).splitlines()
-    else:
-        counters = backticks(['cli-count.py', 'list']).splitlines()
+        if ignore_date == datetime.date.today():
+            return data.get('versus.rep.ignore', [])
+        else:
+            return []
 
-    exercises = [x.split('.', 1)[1]
-        for x in counters if x.startswith('exercise.')]
-    return exercises
+    @staticmethod
+    def set_to_ignore(data, ignore_list):
+        today = datetime.date.today()
+        data['versus.rep.ignore'] = ignore_list
+        data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
+
 
 def combo_prompt(prompt, choices):
     p = subprocess.Popen(
@@ -475,6 +482,7 @@ def dict_replace(dict, **kwargs):
     for key, value in kwargs.items():
         updated[key] = value
     return updated
+
 
 if __name__ == '__main__':
     main()
