@@ -293,8 +293,12 @@ def show_rep_comparison(days_ago):
             unscored_exercises.add(count['name'])
 
     print 'Points:', total
-    print 'Uncounted:', uncounted
-    print 'Unscored activities', ' '.join(sorted(unscored_exercises))
+
+    if uncounted:
+        print 'Uncounted:', uncounted
+
+    if unscored_exercises:
+        print 'Unscored activities', ' '.join(sorted(unscored_exercises))
 
     results = json.loads(backticks([
         'cli-count.py',
