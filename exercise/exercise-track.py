@@ -26,7 +26,6 @@ LOGGER = logging.getLogger()
 ARROW = {True: ">", False: "<"}
 PROMPT = 'PROMPT'
 
-
 DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
 if not os.path.isdir(DATA_DIR):
    os.mkdir(DATA_DIR)
@@ -258,7 +257,10 @@ def versus_clocks(time_at_speed1, time_at_speed2):
             time_at_speed2.quantile_at_value(current_speed),
             remaining_hist.quantile_at_value(current_speed))
 
-def show_rep_comparison(days_ago):
+
+Points = collections.namedtuple('Points', 'total uncounted unscored_exercises')
+
+def calculate_points(days_ago):
     today_json = json.loads(backticks([
         'cli-count.py',
         'summary',
@@ -268,17 +270,6 @@ def show_rep_comparison(days_ago):
 
     today_counts = [
         dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
-
-    with with_data(DATA_FILE) as data:
-        by_exercise_scores = Data.get_exercise_scores(data)
-
-        ignore_date = data.get('versus.rep.ignore.date')
-        ignore_date = ignore_date and datetime.date(*ignore_date)
-
-        if ignore_date == datetime.date.today():
-            to_ignore = data.get('versus.rep.ignore', [])
-        else:
-            to_ignore = []
 
     total = 0
     uncounted = 0
@@ -291,14 +282,29 @@ def show_rep_comparison(days_ago):
         else:
             uncounted += count['count']
             unscored_exercises.add(count['name'])
+    return Points(total=total, uncounted=uncounted, unscored_exercises=unscored_exercises)
 
-    print 'Points:', total
+def show_rep_comparison(days_ago):
+    with with_data(DATA_FILE) as data:
+        by_exercise_scores = Data.get_exercise_scores(data)
 
-    if uncounted:
-        print 'Uncounted:', uncounted
+        ignore_date = data.get('versus.rep.ignore.date')
+        ignore_date = ignore_date and datetime.date(*ignore_date)
 
-    if unscored_exercises:
-        print 'Unscored activities', ' '.join(sorted(unscored_exercises))
+        if ignore_date == datetime.date.today():
+            to_ignore = data.get('versus.rep.ignore', [])
+        else:
+            to_ignore = []
+
+    points = calculate_points(days_ago)
+
+    print 'Points:', points.total
+
+    if points.uncounted:
+        print 'Uncounted:', points.uncounted
+
+    if points.unscored_exercises:
+        print 'Unscored activities', ' '.join(sorted(points.unscored_exercises))
 
     results = json.loads(backticks([
         'cli-count.py',
