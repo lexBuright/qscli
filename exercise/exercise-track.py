@@ -283,7 +283,7 @@ def main():
         for count in today_counts:
             score = by_exercise_scores.get(count['name'])
             if score:
-                activity_total = score[-1][1] * count['count']
+                activity_total = score.last_value() * count['count']
                 total += activity_total
             else:
                 uncounted += count['count']
@@ -310,29 +310,7 @@ def main():
         #    better with a single configuration file edited hand
         #    but to actually be useable this
         #    needs to be easy and *fun* to change
-
-        if args.exercise == PROMPT:
-            rep_exercises = get_rep_exercises(args.days_ago)
-            with with_data(DATA_FILE) as data:
-                scores = get_exercise_scores(data)
-
-            choices = ['{} {}'.format(exercise, scores[exercise][-1][1] if exercise in scores else 'UNKNOWN') for exercise in rep_exercises]
-            choices.sort(key=lambda x: scores[x.split()[0]][-1][1] if x.split()[0] in scores else None)
-            exercise = combo_prompt('exercise', choices).split()[0]
-        elif args.exercise is not None:
-            exercise = args.exercise
-        else:
-            raise Exception('Must specify an exercise')
-
-        if args.score == PROMPT:
-            score = float_prompt('Score:')
-        elif args.score is not None:
-            score = args.score
-        else:
-            raise Exception('Must specify a score somehow')
-
-        with with_data(DATA_FILE) as data:
-            set_exercise_score(data, exercise, score)
+        exercise_set_score(args.exercise, args.days_ago, args.score)
 
     elif args.action == 'rep-ignore':
         activities = args.activity or []
@@ -362,6 +340,8 @@ def main():
     else:
         raise ValueError(args.action)
 
+
+
 def start_sprint(duration):
     backticks(['superwatch.sh', 'start', 'walking.sprint.{}'.format(duration)])
 
@@ -379,6 +359,45 @@ def read_json(filename):
             return json.loads(stream.read())
     else:
         return dict()
+
+class ScoreTimeSeries(object):
+    def __init__(self, time_series):
+        self.time_series = time_series
+
+    def last_value(self):
+        return self.time_series[-1][1]
+
+def exercise_set_score(exercise, days_ago, score):
+    if exercise == PROMPT:
+        rep_exercises = get_rep_exercises(days_ago)
+        with with_data(DATA_FILE) as data:
+            scores = get_exercise_scores(data)
+
+        rep_exercises.sort(key=lambda x: scores[x].last_value() if x in scores else None)
+
+        choices = ['{} {}'.format(
+            exercise,
+            scores[exercise].last_value()
+            if exercise in scores else 'UNKNOWN')
+                       for exercise in rep_exercises]
+
+        exercise = combo_prompt('exercise', choices).split()[0]
+    elif exercise is not None:
+        exercise = exercise
+    else:
+        raise Exception('Must specify an exercise')
+
+    if score == PROMPT:
+        score = float_prompt('Score:')
+    elif score is not None:
+        score = score
+    else:
+        raise Exception('Must specify a score somehow')
+
+    with with_data(DATA_FILE) as data:
+        set_exercise_score(data, exercise, score)
+
+
 
 
 DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
@@ -420,7 +439,7 @@ def set_exercise_score(data, exercise, score):
     exercise_scores.append((time.time(), score))
 
 def get_exercise_scores(data):
-    return data.get('rep.scores.by.exercise', {})
+    return {k: ScoreTimeSeries(v) for (k, v) in data.get('rep.scores.by.exercise', {}).items()}
 
 def get_rep_exercises(days_ago=None):
     if days_ago is not None:
