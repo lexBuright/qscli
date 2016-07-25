@@ -61,6 +61,6 @@ def main():
             time_remaining = time_taken * remaining / done if done else -1.0
             total_time = time_taken + time_remaining
 
-            sys.stderr.write('{:.2f} taken:{:.2f} estimate:{:.2f}\n'.format(done, time_taken, time_remaining))
+            sys.stderr.write('fraction-done:{:.2f} taken:{:.2f} estimate:{:.2f}\n'.format(done, time_taken, time_remaining))
 if __name__ == '__main__':
 	main()
