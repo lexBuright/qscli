@@ -4,6 +4,7 @@
 # This is to be classified as useful glue code
 
 import argparse
+import collections
 import contextlib
 import copy
 import datetime
@@ -19,6 +20,7 @@ import unittest
 import fasteners
 
 import walking
+import guiutils
 from histogram import Histogram
 
 LOGGER = logging.getLogger()
@@ -191,8 +193,19 @@ def aggregates_for_speeds(time_at_speeds):
     quartile_string = ' - '.join(['{:.2}'.format(q / 3.6) for q in quartiles])
     print 'Speed quartiles', quartile_string
 
+def store_points(day, points):
+    backticks(['cli-score.py', 'update', '--id', day.isoformat(), 'exercise.daily-points', str(points)])
+
 def record_rep():
     exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+
+    with with_data(DATA_FILE) as data:
+        points = calculate_points(data, 0)
+
+    store_points(datetime.date.today(), points.total)
+
+    print 'Points:', points.total
+
     print 'Count:', exercise_name
     backticks(['cli-count.py', 'incr', exercise_name])
 
@@ -260,7 +273,8 @@ def versus_clocks(time_at_speed1, time_at_speed2):
 
 Points = collections.namedtuple('Points', 'total uncounted unscored_exercises')
 
-def calculate_points(days_ago):
+def calculate_points(data, days_ago):
+    by_exercise_scores = Data.get_exercise_scores(data)
     today_json = json.loads(backticks([
         'cli-count.py',
         'summary',
@@ -286,7 +300,6 @@ def calculate_points(days_ago):
 
 def show_rep_comparison(days_ago):
     with with_data(DATA_FILE) as data:
-        by_exercise_scores = Data.get_exercise_scores(data)
 
         ignore_date = data.get('versus.rep.ignore.date')
         ignore_date = ignore_date and datetime.date(*ignore_date)
@@ -296,15 +309,17 @@ def show_rep_comparison(days_ago):
         else:
             to_ignore = []
 
-    points = calculate_points(days_ago)
+        today_points = calculate_points(data, 0)
+        old_points = calculate_points(data, days_ago)
 
-    print 'Points:', points.total
+    print backticks(['cli-score.py', 'summary', 'exercise.daily-points', '--update'])
 
-    if points.uncounted:
-        print 'Uncounted:', points.uncounted
+    print 'Points:', old_points.total, today_points.total
 
-    if points.unscored_exercises:
-        print 'Unscored activities', ' '.join(sorted(points.unscored_exercises))
+    if today_points.uncounted + old_points.uncounted:
+        print 'Uncounted:', today_points.uncounted + old_points.uncounted
+    if today_points.unscored_exercises:
+        print 'Unscored activities', ' '.join(sorted(set(today_points.unscored_exercises) | set(old_points.unscored_exercises)))
 
     results = json.loads(backticks([
         'cli-count.py',
