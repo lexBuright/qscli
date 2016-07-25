@@ -13,6 +13,7 @@ Example usage:
 
 import argparse
 import contextlib
+import copy
 import itertools
 import json
 import os
@@ -29,7 +30,7 @@ PARSER = argparse.ArgumentParser(description='')
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'cli-score')
 
 PARSER = argparse.ArgumentParser(description='')
-PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Reand and store data in this directory')
+PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
 parsers = PARSER.add_subparsers(dest='command')
 
 store_command = parsers.add_parser('store', help='', aliases=['s'])
@@ -39,6 +40,7 @@ store_command.add_argument('value', type=float)
 update_command = parsers.add_parser('update', help='', aliases=['u'])
 update_command.add_argument('metric', type=str)
 update_command.add_argument('value', type=float)
+update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
 
 def metric_command(parsers, name):
     command = parsers.add_parser(name, help='', aliases=[name[0]])
@@ -48,8 +50,11 @@ def metric_command(parsers, name):
 metric_command(parsers, 'best')
 metric_command(parsers, 'mean')
 metric_command(parsers, 'run-length')
-summary_parser = metric_command(PARSER, 'summary')
+
+summary_parser = metric_command(parsers, 'summary')
 summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
+
+parsers.add_parser('list', help='List the things that we have scores for')
 
 def main():
     if '--test' in sys.argv[1:]:
@@ -63,7 +68,7 @@ def read_json(filename):
         with open(filename) as stream:
             return json.loads(stream.read())
     else:
-        return dict()
+        return dict(version=1)
 
 @contextlib.contextmanager
 def with_data(data_file):
@@ -77,18 +82,72 @@ def with_data(data_file):
         with open(data_file, 'w') as stream:
             stream.write(output_data)
 
+
+DATA_VERSION = 1
+
+def migrate_data(data, to_version):
+    while True:
+        if get_version(data) == to_version:
+            return data
+
+        old_version = get_version(data)
+        new_data = up_migrate_data(data)
+        new_version = get_version(new_data)
+        if not down_migrate_data(new_data) == data:
+            raise Exception('Rounding tripping: {} -> {} -> {} failed'.format(old_version, new_version, old_version))
+
+        data = new_data
+
+def get_version(data):
+    return data.get('version')
+
+def up_migrate_data(data):
+    new_data = copy.copy(data)
+    version = get_version(new_data)
+
+    if version == None:
+        metrics = new_data.get('metrics', dict())
+        for metric_name in metrics:
+            metric = get_metric_data(new_data, metric_name)
+            metric['values'] = [dict(time=time, value=value) for (time, value) in metric['values']]
+
+        new_data['version'] = 1
+        return new_data
+    else:
+    	raise ValueError(version)
+
+def down_migrate_data(data):
+    new_data = copy.copy(data)
+    version = get_version(new_data)
+    if version == 1:
+        metrics = new_data.get('metrics', dict())
+        for metric_name in metrics:
+            metric = get_metric_data(new_data, metric_name)
+            metric['values'] = [(value['time'], value['value']) for value in metric['values']]
+
+        del new_data['version']
+    return new_data
+
 def run(arguments):
     options = PARSER.parse_args(arguments)
     if not os.path.isdir(options.config_dir):
         os.mkdir(options.config_dir)
 
     data_file = os.path.join(options.config_dir, 'data.json')
+    with with_data(data_file) as data:
+        # new_data = migrate_data(data, DATA_VERSION)
+        # data.clear()
+        # data.update(**new_data)
 
-    with with_metric_data(data_file, options.metric) as metric_data:
+        if options.command == 'list':
+            metric_names = sorted(data.get('metrics', dict()))
+            return '\n'.join(metric_names)
+
+        metric_data = get_metric_data(data, options.metric)
         if options.command == 'store':
             return store(metric_data, options.value)
         elif options.command == 'update':
-            return update(metric_data, options.value)
+            return update(metric_data, options.value, options.id)
         elif options.command == 'best':
             return best(metric_data)
         elif options.command == 'mean':
@@ -100,44 +159,56 @@ def run(arguments):
         else:
             raise ValueError(options.command)
 
-@contextlib.contextmanager
-def with_metric_data(data_file, metric):
-    with with_data(data_file) as data:
-        metrics = data.setdefault('metrics', dict())
-        metric_data = metrics.setdefault(metric, dict() )
-        metric_data.setdefault('values', [])
-        yield metric_data
+def get_metric_data(data, metric):
+    metrics = data.setdefault('metrics', dict())
+    metric_data = metrics.setdefault(metric, dict() )
+    metric_data.setdefault('values', [])
+    return metric_data
 
 def store(metric_data, value):
     metric_values = metric_data.setdefault('values', [])
-    metric_values.append((time.time(), value))
+    metric_values.append(dict(time=time.time(), value=value))
     return ''
 
-def update(metric_data, value):
+def update(metric_data, value, ident):
     metric_values = metric_data.setdefault('values', [])
-    if metric_values:
-        metric_values.pop()
-    metric_values.append((time.time(), value))
+    entry = dict(time=time.time(), value=value)
+    if ident is not None:
+        entry['id'] = ident
+
+    if not metric_values:
+        metric_values.append(entry)
+
+    if ident is not None:
+        ident_entries = [x for x in metric_values if x.get('id') == ident]
+        if ident_entries:
+            ident_entry, = ident_entries
+            ident_entry['value'] = value
+        else:
+            metric_values.append(entry)
+    else:
+        metric_values[-1] = entry
+
     return ''
 
 def rank(metric_data):
     result = 0
-    last = metric_data['values'][-1][1]
-    for _time, value in metric_data['values']:
-        if value > last:
+    last = get_last(metric_data)
+    for entry in metric_data['values']:
+        if entry['value'] > last:
             result += 1
     return result
 
 def best(metric_data):
-    best_pair = max(metric_data['values'], key=lambda pair: pair[1])
-    return best_pair[1]
+    best_pair = max(metric_data['values'], key=lambda pair: pair['value'])
+    return best_pair['value']
 
 def mean(metric_data):
     value = sum([pair[1] for pair in metric_data['values']]) / len(metric_data['values'])
     return value
 
 def run_length(metric_data):
-    rev_values = [pair[1] for pair in metric_data['values']][::-1]
+    rev_values = [entry['value'] for entry in metric_data['values']][::-1]
 
     pairs = zip(rev_values,rev_values[1:])
     result = len(list(itertools.takewhile(lambda x: x[0] > x[1], pairs))) + 1
@@ -145,11 +216,11 @@ def run_length(metric_data):
 
 def quantile(metric_data):
     # don't pull in numpy / scipy dependnecies
-    values = [d[1] for d in metric_data['values']]
+    values = [d['value'] for d in metric_data['values']]
     if not values:
         return None
 
-    last = metric_data['values'][-1][1]
+    last = get_last(metric_data)
     lower = len([x for x in values if x <= last])
     upper = len(values) - len([x for x in values if x > last])
     return float(lower + upper) / 2 / len(values)
@@ -158,15 +229,23 @@ def best_ratio(metric_data):
     if len(metric_data['values']) < 1:
         return None
     else:
-        last = metric_data['values'][-1][1]
-        rest = [x[1] for x in metric_data['values'][:-1]]
+        last = get_last(metric_data)
+        rest = [x['value'] for x in metric_data['values'][:-1]]
         if not rest or max(rest) == 0:
             return None
         else:
             return last / max(rest)
 
+def get_last(metric_data):
+    has_ids = any(entry.get('id') for entry in metric_data['values'])
+    if has_ids:
+        return sorted(metric_data['values'], key=lambda x: x.get('id'))[-1]['value']
+    else:
+        return metric_data['values'][-1]['value']
+
 def summary(metric_data, update=False):
-    last = metric_data['values'][-1][1]
+    print(metric_data['values'])
+    last = get_last(metric_data)
     messages = [str(last)]
     last_rank = rank(metric_data)
     if last_rank == 0 and len(metric_data['values']) > 1:
