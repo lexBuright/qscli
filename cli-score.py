@@ -244,7 +244,6 @@ def get_last(metric_data):
         return metric_data['values'][-1]['value']
 
 def summary(metric_data, update=False):
-    print(metric_data['values'])
     last = get_last(metric_data)
     messages = [str(last)]
     last_rank = rank(metric_data)
