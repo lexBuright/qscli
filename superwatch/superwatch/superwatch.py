@@ -23,24 +23,17 @@ superwatch.py split timername
 If superwatch isn't quite super enough for you, you might want to look into timetrap.
 """
 
-from . import zodb
+from . import json_backend
 
 import contextlib
 import json
 import logging
 import os
 
-import threading
-
 from . import config
 
 
 LOGGER = logging.getLogger(__name__)
-
-# ZODB cache invalidation breaks unless you use
-#  persitentlist and persistent mapping
-from persistent.list import PersistentList
-from persistent.mapping import PersistentMapping
 
 class Superwatch(object):
     def __init__(self, data_dir, time_mod):
@@ -57,8 +50,8 @@ class Superwatch(object):
         else:
             if not os.path.isdir(self.data_dir):
                 os.mkdir(self.data_dir)
-            data_file = os.path.join(self.data_dir, config.DATA_FILE)
-            return zodb.with_data(data_file)
+            data_file = os.path.join(self.data_dir, json_backend.DATA_FILE)
+            return json_backend.with_data(data_file)
 
     @contextlib.contextmanager
     def with_clock_data(self, clock_name, data=None, clear=False):
@@ -96,7 +89,7 @@ class Superwatch(object):
                 clock_data['running'] = True
                 clock_data['start'] = start
                 clock_data['stop'] = None
-                clock_data['splits'] = PersistentList([ClockDataParser.new_split(start, name=next_label)])
+                clock_data['splits'] = json_backend.new_list([ClockDataParser.new_split(start, name=next_label)])
                 return ''
 
     def label_split(self, clock_name, label):
@@ -107,23 +100,23 @@ class Superwatch(object):
     def set_split_data(self, clock_name, data):
         with self.with_clock_data(clock_name) as clock_data:
             old_data = clock_data['splits'][-1]['data']
-            old_data = old_data or PersistentMapping()
+            old_data = old_data or json_backend.new_dict()
             old_data.update(data)
             clock_data['splits'][-1]['data'] = old_data
         return []
 
     def export(self, clock_name):
         with self.with_clock_data(clock_name) as clock_data:
-            return zodb.json_dumps(clock_data)
+            return json_backend.json_dumps(clock_data)
 
     def export_all(self):
         with self.with_data() as data:
-            return zodb.JSON_ENCODER.encode(data)
+            return json_backend.JSON_ENCODER.encode(data)
 
     def import_all(self, filename):
         with self.with_data() as data:
             with open(filename) as stream:
-                new_data = zodb.JSON_DECODER.decode(stream.read())
+                new_data = json_backend.JSON_DECODER.decode(stream.read())
 
             for k, v in new_data.items():
                 data[k] = v
@@ -150,7 +143,7 @@ class Superwatch(object):
         with self.with_data() as out_of_date_data:
             # horrible hack to get a data that
             #   is accessible without a connection
-            data = json.loads(zodb.json_dumps(out_of_date_data))
+            data = json.loads(json_backend.json_dumps(out_of_date_data))
 
 
         while True:
@@ -229,13 +222,13 @@ class Superwatch(object):
             duration = clock_data['duration']
 
         if json_output:
-            return zodb.json_dumps(dict(duration=duration, start=clock_data['start'], stop=clock_data['stop']))
+            return json_backend.json_dumps(dict(duration=duration, start=clock_data['start'], stop=clock_data['stop']))
         else:
             return self.format_float(duration)
 
     def split_show(self, data, json_output):
         if 'splits' not in data:
-            data['splits'] = PersistentList()
+            data['splits'] = json_backend.new_list()
 
         splits = data['splits']
 
@@ -252,7 +245,7 @@ class Superwatch(object):
 
         if json_output:
             duration = (data['stop'] or current_time) - data['start']
-            return zodb.json_dumps(dict(splits=splits, duration=duration))
+            return json_backend.json_dumps(dict(splits=splits, duration=duration))
         else:
             split_formats = []
             for split in splits:
@@ -262,7 +255,7 @@ class Superwatch(object):
                 if not data:
                     split_formats.append('{} {:.2f}'.format(display_name, split['duration']))
                 else:
-                    split_formats.append('{} {} {:.2f}'.format(display_name, zodb.json_dumps(data), split['duration']))
+                    split_formats.append('{} {} {:.2f}'.format(display_name, json_backend.json_dumps(data), split['duration']))
 
             total = sum(split['duration'] for split in splits)
 
@@ -272,7 +265,7 @@ class Superwatch(object):
         with self.with_clock_data(clock_name, data=data) as clock_data:
 
             if 'splits' not in clock_data:
-                clock_data['splits'] = PersistentList()
+                clock_data['splits'] = json_backend.new_list()
 
             split_data = clock_data['splits']
 
@@ -310,13 +303,13 @@ class Superwatch(object):
     def clock_data(data, clock_name, clear=False):
         if clear:
             if 'clocks' not in data:
-                data['clocks'] = PersistentMapping()
+                data['clocks'] = json_backend.new_dict()
             clocks_data = data['clocks']
-            clock_data = clocks_data[clock_name] = PersistentMapping()
+            clock_data = clocks_data[clock_name] = json_backend.new_dict()
             return clock_data
         else:
             if 'clocks' not in data:
-                data['clocks'] = PersistentMapping()
+                data['clocks'] = json_backend.new_dict()
 
             if clock_name not in data['clocks']:
                 data['clocks'][clock_name] = {}
@@ -331,7 +324,7 @@ class ClockDataParser(object):
 
     @classmethod
     def new_split(cls, start, name=None):
-        return PersistentMapping(dict(name=name, start=start, end=None, data=None, duration=None))
+        return json_backend.new_dict(dict(name=name, start=start, end=None, data=None, duration=None))
 
     @classmethod
     def close_split(cls, split, split_end, name=None):

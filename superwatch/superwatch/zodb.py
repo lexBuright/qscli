@@ -17,6 +17,14 @@ import persistent.mapping
 import transaction
 import ZODB.FileStorage
 
+def new_list(base=None):
+    base = base or []
+    return persistent.list.PersistentList(base)
+
+def new_dict(base=None):
+    base = base or dict()
+    return persistent.mapping.PersistentMapping(base)
+
 
 class ZODBJsonEncoder(json.JSONEncoder):
     """Encode a ZODB object graph to json (deals with PersistentMapping and PersistentList)"""

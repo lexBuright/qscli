@@ -8,8 +8,6 @@ import threading
 import time
 import unittest
 
-from . import zodb
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -174,7 +172,8 @@ class SuperTest(unittest.TestCase):
         result = self.run_watch('play', 'run1', '--before', '3.0', '--after', '1.0')
         self.assertEqual(result, '1.0 2.0\n2.0 3.0\n3.0 4.0\n')
 
-    def test_with_data(self):
+    def test_zodb(self):
+        from . import zodb
         data_file = os.path.join(self.direc, 'test_data')
 
         with zodb.with_data(data_file) as data:
@@ -187,8 +186,27 @@ class SuperTest(unittest.TestCase):
             lst.append('hello')
             lst.append('world')
 
-
         with zodb.with_data(data_file) as data:
+            self.assertEquals(data['a'], 1)
+            self.assertEquals(data['b'], 2)
+            self.assertEquals(data['dict']['value'], 5)
+            self.assertEquals(data['list'], ["hello", "world"])
+
+    def test_jsondb(self):
+        from . import json_backend
+        data_file = os.path.join(self.direc, 'test_data')
+
+        with json_backend.with_data(data_file) as data:
+            data['a'] = 1
+            data.setdefault('b', 2)
+            data.setdefault('b', 3)
+            dictionary = data.setdefault('dict', dict())
+            dictionary['value'] = 5
+            lst = data.setdefault('list', [])
+            lst.append('hello')
+            lst.append('world')
+
+        with json_backend.with_data(data_file) as data:
             self.assertEquals(data['a'], 1)
             self.assertEquals(data['b'], 2)
             self.assertEquals(data['dict']['value'], 5)
