@@ -2,8 +2,8 @@
 """Stupidly feature-complete command line tool to keep track of scores;
 Quickly gameify any activity.
 
-Designed to be useable programmatically, though you might  prefer to use something like a
-database of ELK (elasticsearch logstash kibana). If you being serious
+Designed to be useable programmatically, though you might prefer to use something like a
+database of ELK (elasticsearch logstash kibana) if you are being serious.
 
 Example usage:
    cli-score.py store game 8
@@ -41,6 +41,9 @@ update_command = parsers.add_parser('update', help='', aliases=['u'])
 update_command.add_argument('metric', type=str)
 update_command.add_argument('value', type=float)
 update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
+
+delete_command = parsers.add_parser('delete', help='', aliases=['rm'])
+delete_command.add_argument('metric', type=str)
 
 def metric_command(parsers, name):
     command = parsers.add_parser(name, help='', aliases=[name[0]])
@@ -142,6 +145,10 @@ def run(arguments):
         if options.command == 'list':
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
+        elif options.command == 'delete':
+            metrics = data.get('metrics', dict())
+            metrics.pop(options.metric)
+            return ''
 
         metric_data = get_metric_data(data, options.metric)
         if options.command == 'store':
@@ -200,18 +207,18 @@ def rank(metric_data):
     return result
 
 def best(metric_data):
-    best_pair = max(metric_data['values'], key=lambda pair: pair['value'])
-    return best_pair['value']
+    best_record = max(metric_data['values'], key=lambda record: record['value'])
+    return best_record['value']
 
 def mean(metric_data):
-    value = sum([pair[1] for pair in metric_data['values']]) / len(metric_data['values'])
+    value = sum([record['value'] for record in metric_data['values']]) / len(metric_data['values'])
     return value
 
 def run_length(metric_data):
     rev_values = [entry['value'] for entry in metric_data['values']][::-1]
 
-    pairs = zip(rev_values,rev_values[1:])
-    result = len(list(itertools.takewhile(lambda x: x[0] > x[1], pairs))) + 1
+    records = zip(rev_values,rev_values[1:])
+    result = len(list(itertools.takewhile(lambda x: x[0] > x[1], records))) + 1
     return result
 
 def quantile(metric_data):
@@ -310,17 +317,22 @@ class TestCli(unittest.TestCase):
         self.cli(['store', 'metric', '30'])
         self.assertEqual(self.cli(['run-length', 'metric']), '3')
 
-    def test_summary(self):
-        self.cli(['store', 'metric', '1'])
-        self.assertEqual(self.cli(['summary', 'metric']), '1.0 -- New best')
-        self.cli(['store', 'metric', '2'])
-        self.assertEqual(self.cli(['summary', 'metric']), '2.0 -- New best -- Run of 2')
-        self.cli(['store', 'metric', '3'])
-        self.assertEqual(self.cli(['summary', 'metric']), '3.0 -- New best -- Run of 3')
-        self.cli(['store', 'metric', '2'])
-        self.assertEqual(self.cli(['summary', 'metric']), '2.0 -- Broken run -- 2st best')
-        self.cli(['store', 'metric', '4']);
-        self.assertEqual(self.cli(['summary', 'metric']), '4.0 -- New best -- Run of 2')
+    def test_delete(self):
+        self.cli(['store', 'first-metric', '1'])
+        self.cli(['store', 'other-metric', '2'])
+        first_list = self.cli(['list'])
+
+        self.assertTrue('first-metric' in first_list)
+        self.assertTrue('other-metric' in first_list)
+
+        self.cli(['delete', 'first-metric'])
+
+        second_list = self.cli(['list'])
+        self.assertFalse('first-metric' in second_list)
+        self.assertTrue('other-metric' in second_list)
+
+
+
 
 
 if __name__ == "__main__":
