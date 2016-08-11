@@ -18,9 +18,10 @@ import time
 import unittest
 
 import fasteners
+import sparklines
 
-import walking
 import guiutils
+import walking
 from histogram import Histogram
 
 LOGGER = logging.getLogger()
@@ -34,6 +35,14 @@ if not os.path.isdir(DATA_DIR):
 
 DATA_FILE = os.path.join(DATA_DIR, 'data')
 
+def get_versus_days_ago():
+    with with_data(DATA_FILE) as data:
+        return data.get('versus_days', 1)
+
+def set_versus_days_ago(days_ago):
+    with with_data(DATA_FILE) as data:
+        data['versus_days'] = days_ago
+
 def main():
     #pylint: disable=too-many-branches
     parser = build_parser()
@@ -44,6 +53,17 @@ def main():
 
     if args.action == 'start':
         walking.start_walking()
+    elif args.action == 'versus-days':
+        set_versus_days_ago(args.days_ago)
+    elif args.action == 'incr-versus-days':
+        set_versus_days_ago(get_versus_days_ago() + 1)
+        print get_versus_days_ago()
+    elif args.action == 'decr-versus-days':
+        set_versus_days_ago(get_versus_days_ago() + 1)
+        print get_versus_days_ago()
+    elif args.action == 'reset-versus-days':
+        set_versus_days_ago(1)
+        print get_versus_days_ago()
     elif args.action == 'incline-up':
         walking.change_incline(1)
     elif args.action == 'incline-down':
@@ -59,9 +79,11 @@ def main():
     elif args.action == 'rep-start':
         # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)
+        exercise_score = 'exercise-score.{}'.format(args.exercise_name)
+
         backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
         backticks(['cli-count.py', 'new-set', exercise_name])
-        backticks(['cli-score.py', 'store', exercise_name, '0'])
+        backticks(['cli-score.py', 'store', exercise_score, '0'])
     elif args.action == 'rep-note':
         backticks(['cli-count.py', 'note', args.note])
     elif args.action == 'rep':
@@ -88,7 +110,7 @@ def main():
             print time.time() - start
         stop_sprint(duration)
     elif args.action == 'rep-versus':
-        show_rep_comparison(args.days_ago)
+        show_rep_comparison(args.days_ago if args.days_ago is not None else get_versus_days_ago())
     elif args.action == 'rep-set-score':
         # Perhaps this could all be done
         #    better with a single configuration file edited hand
@@ -136,6 +158,9 @@ def build_parser():
     parsers.add_parser('speed-down')
     parsers.add_parser('show')
     parsers.add_parser('show-all')
+
+    set_versus = parsers.add_parser('versus-days')
+    set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
 
     rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a particular exercise')
     rep_set_score.add_argument('--exercise', type=str)
@@ -194,17 +219,30 @@ def aggregates_for_speeds(time_at_speeds):
     print 'Speed quartiles', quartile_string
 
 def store_points(day, points):
-    backticks(['cli-score.py', 'update', '--id', day.isoformat(), 'exercise.daily-points', str(points)])
+    backticks(['cli-score.py', 'update', '--id', day.isoformat(), 'exercise-score.daily-points', str(points)])
+
+def get_current_exercise():
+    return backticks(['cli-alias', 'exercisetrack.exercise']).strip()
 
 def record_rep():
-    exercise_name = backticks(['cli-alias', 'exercisetrack.exercise']).strip()
+    exercise_name = get_current_exercise()
+    exercise_score = 'exercise-score.' + exercise_name.split('.', 1)[1]
+    versus_days = get_versus_days_ago()
 
     with with_data(DATA_FILE) as data:
         points = calculate_points(data, 0)
-
+    versus_points = calculate_points(data, versus_days)
     store_points(datetime.date.today(), points.total)
 
-    print 'Points:', points.total
+    # IMPROVEMENT: We are hitting performance issues
+    #   for high scores - we should get jsdb finished
+    
+    # graph = sparklines.sparklines([
+    #     calculate_points(data, i).total
+    #     for i in range(0, 7, 1)])[0]
+    # print graph
+
+    print 'Points: {} (vs {})'.format(points.total, versus_points.total)
 
     print 'Count:', exercise_name
     backticks(['cli-count.py', 'incr', exercise_name])
@@ -224,8 +262,8 @@ def record_rep():
     rate = count / duration if (count and duration) else 0
 
     print 'Rate: {:.2f}'.format(rate)
-    backticks(['cli-score.py', 'update', exercise_name, str(count)])
-    print backticks(['cli-score.py', 'summary', exercise_name, '--update'])
+    backticks(['cli-score.py', 'update', exercise_score, str(count)])
+    print backticks(['cli-score.py', 'summary', exercise_score, '--update'])
 
 def versus_clocks(time_at_speed1, time_at_speed2):
     if time_at_speed2.empty():
