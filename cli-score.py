@@ -22,6 +22,7 @@ import sys
 import tempfile
 import time
 import unittest
+from io import StringIO
 
 import fasteners
 
@@ -42,8 +43,12 @@ update_command.add_argument('metric', type=str)
 update_command.add_argument('value', type=float)
 update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
 
-delete_command = parsers.add_parser('delete', help='', aliases=['rm'])
+delete_command = parsers.add_parser('delete', help='Delete a metric', aliases=['rm'])
 delete_command.add_argument('metric', type=str)
+
+backup_command = parsers.add_parser('backup', help='Dump out all data to standard out')
+
+restore_command = parsers.add_parser('restore', help='Dump out all data to standard out')
 
 def metric_command(parsers, name):
     command = parsers.add_parser(name, help='', aliases=[name[0]])
@@ -64,7 +69,7 @@ def main():
         sys.argv.remove('--test')
         unittest.main()
     else:
-        print(str(run(sys.argv[1:])))
+        print(str(run(sys.argv[1:], sys.stdin)))
 
 def read_json(filename):
     if os.path.exists(filename):
@@ -131,7 +136,7 @@ def down_migrate_data(data):
         del new_data['version']
     return new_data
 
-def run(arguments):
+def run(arguments, stdin):
     options = PARSER.parse_args(arguments)
     if not os.path.isdir(options.config_dir):
         os.mkdir(options.config_dir)
@@ -148,6 +153,11 @@ def run(arguments):
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
+            return ''
+        elif options.command == 'backup':
+            return backup(data)
+        elif options.command == 'restore':
+            restore(data, stdin.read())
             return ''
 
         metric_data = get_metric_data(data, options.metric)
@@ -290,10 +300,22 @@ def ordinal(number):
         '9': 'th',
     }[str(number)[-1]]
 
+def backup(data):
+    data = copy.deepcopy(data)
+    data['version'] = DATA_VERSION
+    backup_string = json.dumps(data)
+    return backup_string
+
+def restore(data, backup):
+    data.clear()
+    backup_data = json.loads(backup)
+    data.update(**backup_data)
+
 class TestCli(unittest.TestCase):
-    def cli(self, command):
+    def cli(self, command, input=''):
+        stdin = StringIO(input)
         try:
-            return str(run(['--config-dir', self._config_dir] + command))
+            return str(run(['--config-dir', self._config_dir] + command, stdin))
         except SystemExit:
             raise Exception('Exitted out')
 
@@ -331,9 +353,33 @@ class TestCli(unittest.TestCase):
         self.assertFalse('first-metric' in second_list)
         self.assertTrue('other-metric' in second_list)
 
+    def test_backup(self):
+        self.cli(['store', 'first-metric', '1'])
+        self.cli(['store', 'other-metric', '2'])
 
+        backup_string = self.cli(['backup'])
 
+        for filename in os.listdir(self._config_dir):
+            os.unlink(os.path.join(self._config_dir, filename))
 
+        self.assertEqual(self.cli(['list']), '')
+
+        for filename in os.listdir(self._config_dir):
+            os.unlink(os.path.join(self._config_dir, filename))
+
+        self.cli(['restore'], input=backup_string)
+
+        lst = self.cli(['list'])
+        self.assertTrue('other-metric' in lst)
+        self.assertTrue('first-metric' in lst)
+
+    def test_backup_compatible(self):
+        BACKUP_STRING = '{"metrics": {"first-metric": {"values": [{"time": 1470877073.3021483, "value": 1.0}]}, "other-metric": {"values": [{"time": 1470877073.302729, "value": 2.0}]}}, "version": 1}'
+
+        self.cli(['restore'], input=BACKUP_STRING)
+        lst = self.cli(['list'])
+        self.assertTrue('other-metric' in lst)
+        self.assertTrue('first-metric' in lst)
 
 if __name__ == "__main__":
 	main()
