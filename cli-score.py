@@ -46,6 +46,12 @@ update_command.add_argument('--id', type=str, help='Update the score with this i
 delete_command = parsers.add_parser('delete', help='Delete a metric', aliases=['rm'])
 delete_command.add_argument('metric', type=str)
 
+move_command = parsers.add_parser('move', help='Rename a metric', aliases=['rm'])
+move_command.add_argument('old_name', type=str)
+move_command.add_argument('new_name', type=str)
+
+
+
 backup_command = parsers.add_parser('backup', help='Dump out all data to standard out')
 
 restore_command = parsers.add_parser('restore', help='Dump out all data to standard out')
@@ -153,6 +159,11 @@ def run(arguments, stdin):
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
+            return ''
+        elif options.command == 'move':
+            metrics = data.get('metrics', dict())
+            metrics[options.new_name] = metrics[options.old_name]
+            del metrics[options.old_name]
             return ''
         elif options.command == 'backup':
             return backup(data)
@@ -352,6 +363,15 @@ class TestCli(unittest.TestCase):
         second_list = self.cli(['list'])
         self.assertFalse('first-metric' in second_list)
         self.assertTrue('other-metric' in second_list)
+
+    def test_move(self):
+        self.cli(['store', 'first-metric', '1'])
+        self.cli(['store', 'first-metric', '2'])
+        self.cli(['move', 'first-metric', 'second-metric'])
+        lst = self.cli(['list'])
+        self.assertTrue('first-metric' not in lst)
+        self.assertTrue('second-metric' in lst)
+        self.assertEqual(self.cli(['best', 'second-metric']), '2.0')
 
     def test_backup(self):
         self.cli(['store', 'first-metric', '1'])
