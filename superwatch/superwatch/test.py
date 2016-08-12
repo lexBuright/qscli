@@ -11,6 +11,7 @@ import unittest
 LOGGER = logging.getLogger(__name__)
 
 
+
 class SuperTest(unittest.TestCase):
     def setUp(self):
         self.direc = tempfile.mkdtemp()
@@ -25,8 +26,8 @@ class SuperTest(unittest.TestCase):
         return self.run_watch_streaming(output_buffer, *args)
 
     def run_watch_streaming(self, output_buffer, *args):
-        from .parse import run
         LOGGER.debug("Test running %r", args)
+        from .parse import run # hack to avoid cyclic import
         run(self.direc, self.fake_time, output_buffer, args)
         return output_buffer.getvalue()
 
@@ -262,6 +263,10 @@ class SuperTest(unittest.TestCase):
         self.set_time(15.2)
         self.wait_for_value(lambda: len(get_lines()), 6)
         self.assertEquals(get_lines()[-1], '5.0 3.0 30.0')
+
+    def test_parse_commands(self):
+        from .parse import parse_command # hack to avoid cyclic import
+        self.assertEquals(parse_command('he\\ llo world'), ['he llo', 'world'])
 
     def wait_for_value(self, thunk, value):
         for _ in range(10):

@@ -23,8 +23,8 @@ superwatch.py split timername
 If superwatch isn't quite super enough for you, you might want to look into timetrap.
 """
 
-#from . import json_backend as backend
 from . import jsdb_backend as backend
+# from . import json_backend as backend
 
 import contextlib
 import json
@@ -56,9 +56,13 @@ class Superwatch(object):
 
     @contextlib.contextmanager
     def with_clock_data(self, clock_name, data=None, clear=False):
+        LOGGER.debug('Loading data...')
         with self.with_data(data=data) as d:
             clock_data = self.clock_data(d, clock_name, clear=clear)
+
+            LOGGER.debug('Data Loaded.')
             yield clock_data
+
 
     def running(self, clock_name):
         "Check that the clock is currently running"
