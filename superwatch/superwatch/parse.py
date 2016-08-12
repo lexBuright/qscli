@@ -67,8 +67,8 @@ def watch_run(watch, options):
         return watch.export_all()
     elif options.command == 'delete':
         return watch.delete(options.clocks)
-    elif options.command == 'save':
-        return watch.save(options.source, options.target)
+    elif options.command == 'move':
+        return watch.move(options.source, options.target)
     elif options.command == 'play':
         return watch.play(options.clocks, options.wait, options.absolute, options.after, options.before)
     elif options.command == 'split-data':
@@ -133,9 +133,9 @@ def build_parser():
     play.add_argument('--after', type=float, help='Return values after this offset or unix time')
     play.add_argument('--before', type=float, help='Return values after this offset or unix time')
 
-    save = parsers.add_parser('save', help='Copy the clock to a new name')
-    save.add_argument('source', type=str, default=DEFAULT_CLOCK, nargs='?')
-    save.add_argument('target', type=str)
+    move = parsers.add_parser('move', help='Copy the clock to a new name')
+    move.add_argument('source', type=str, default=DEFAULT_CLOCK, nargs='?')
+    move.add_argument('target', type=str)
 
     return parser
 

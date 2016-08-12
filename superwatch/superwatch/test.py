@@ -92,15 +92,15 @@ class SuperTest(unittest.TestCase):
         self.run_watch('split', '-l', 'two', '-n', 'three')
         self.assertEquals(self.run_watch('show'), 'one 1.00\ntwo 1.00\n*three 0.00\n-----\ntotal 2.00\n')
 
-    def test_save(self):
+    def test_move(self):
         self.run_watch('start')
         self.incr_time(2)
         self.run_watch('stop')
-        self.run_watch('save', 'saved-clock')
+        self.run_watch('move', 'saved-clock')
         self.run_watch('start')
         self.incr_time(1)
         self.run_watch('stop')
-        self.run_watch('save', 'saved-clock', 'saved-clock-copy')
+        self.run_watch('move', 'saved-clock', 'saved-clock-copy')
         self.assertEquals(self.run_watch('show'), '1.00\n')
         self.assertEquals(self.run_watch('show', 'saved-clock'), '2.00\n')
         self.assertEquals(self.run_watch('show', 'saved-clock-copy'), '2.00\n')
@@ -230,7 +230,6 @@ class SuperTest(unittest.TestCase):
         self.run_watch('import-all', export_file)
         self.assertEquals(self.run_watch('show', 'run1'), dump)
 
-
     def test_player(self):
         self.set_time(0)
         self.run_watch('start', 'run1', '-n', '1.0')
@@ -272,7 +271,7 @@ class SuperTest(unittest.TestCase):
 
     def wait_for_value(self, thunk, value):
         for _ in range(10):
-            time.sleep(0.01)
+            time.sleep(0.1)
             last_value = thunk()
             if last_value == value:
                 break
