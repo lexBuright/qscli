@@ -1,11 +1,4 @@
-"""Interact with zodb object graph store
-
-ZODB is probably bad for big amounts of data and broad interfaces
-to your data. But for our current use case it allows us to
-keep data in a json'y form. This is useful because we want to be
-able to talk json to clients
-
-"""
+"""Store data in a zodb backend"""
 
 
 import contextlib
@@ -17,6 +10,8 @@ import persistent.mapping
 import transaction
 import ZODB.FileStorage
 
+DATA_FILE = 'data.zodb'
+
 def new_list(base=None):
     base = base or []
     return persistent.list.PersistentList(base)
@@ -24,7 +19,6 @@ def new_list(base=None):
 def new_dict(base=None):
     base = base or dict()
     return persistent.mapping.PersistentMapping(base)
-
 
 class ZODBJsonEncoder(json.JSONEncoder):
     """Encode a ZODB object graph to json (deals with PersistentMapping and PersistentList)"""
