@@ -234,7 +234,8 @@ def record_rep():
 
     # IMPROVEMENT: We are hitting performance issues
     #   for high scores - we should get jsdb finished
-    
+
+    import sparklines # This takes 2-3 milliseconds (from __future__ import round)
     # graph = sparklines.sparklines([
     #     calculate_points(data, i).total
     #     for i in range(0, 7, 1)])[0]
