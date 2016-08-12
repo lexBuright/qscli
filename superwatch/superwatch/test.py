@@ -132,12 +132,6 @@ class SuperTest(unittest.TestCase):
         self.incr_time(1)
         self.assertEquals(self.run_watch('show'), '*0 {"a": 1, "b": "2"} 1.00\n-----\ntotal 1.00\n')
 
-    def test_json(self):
-        self.run_watch()
-        self.incr_time(1)
-        self.run_watch('split', '-n', 'split')
-        self.assertEquals(self.run_watch('show', '--json'), '''{"duration": 1.0, "splits": [{"end": 1.0, "name": "0", "current": false, "start": 0.0, "duration": 1.0, "data": null}, {"end": null, "name": "split", "current": true, "start": 1.0, "duration": 0.0, "data": null}]}''')
-
     def test_start(self):
         self.run_watch('start')
         self.incr_time(1)
