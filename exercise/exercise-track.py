@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python -u
 # -*- coding: utf-8 -*-
 
 # This is to be classified as useful glue code
@@ -18,11 +18,10 @@ import time
 import unittest
 
 import fasteners
-import sparklines
-
 import guiutils
 import walking
 from histogram import Histogram
+
 
 LOGGER = logging.getLogger()
 
@@ -48,7 +47,6 @@ def main():
     parser = build_parser()
     args = parser.parse_args()
     if args.debug:
-        print 'Debug logging'
         logging.basicConfig(level=logging.DEBUG)
 
     if args.action == 'start':
@@ -418,7 +416,6 @@ def exercise_set_score(exercise, days_ago, score):
 
     with with_data(DATA_FILE) as data:
         Data.set_exercise_score(data, exercise, score)
-
 
 @contextlib.contextmanager
 def with_data(data_file):

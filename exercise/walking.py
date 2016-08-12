@@ -31,6 +31,19 @@ def backticks(command):
         raise Exception('{!r} returned non-zero return code {!r}'.format(command, process.returncode))
     return result
 
+def noshell_backticks(command):
+    process = subprocess.Popen(command, stdout=subprocess.PIPE)
+
+    LOGGER.debug('Running %r', command)
+    result, _ = process.communicate(command)
+    LOGGER.debug('Finished %r', command)
+
+    if process.returncode != 0:
+        raise Exception('{!r} returned non-zero return code {!r}'.format(command, process.returncode))
+    return result
+
+nbt = noshell_backticks
+
 bt = backticks
 
 def change_setting(lst, value, incr):
@@ -38,27 +51,36 @@ def change_setting(lst, value, incr):
     return lst[index]
 
 def start_walking():
-    bt('superwatch.sh start walking.speed -n 0.8')
-    bt('superwatch.sh start walking.incline -n 0.0')
+    watch = Watch()
+    watch.initialize()
+    watch.run(['start', 'walking.speed', '-n', '0.8'])
+    watch.run(['start', 'walking.incline', '-n', '0.0'])
     print 'Starting exercise'
 
 def change_incline(incr):
-    bt('superwatch.sh show walking.incline --json ')
-    incline = json.loads(
-        bt("""
-superwatch.sh show walking.incline --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'"""
-          ).strip())
+    watch = Watch()
+    watch.initialize()
+
+    data = json.loads(watch.run(['show', 'walking.incline', '--json']))
+    incline, = [x['name'] for x in data['splits'] if x['current']]
     new_incline = next_incline(incline, incr)
-    bt('superwatch.sh split walking.incline -n {}'.format(new_incline))
+    watch.run(['split', 'walking.incline', '-n', new_incline])
+    watch.stop()
+
     print 'incline', new_incline
 
 def change_speed(incr):
-    bt('superwatch.sh show walking.incline --json ')
-    speed = json.loads(bt("""
-    	superwatch.sh show walking.speed --json | jq '.splits | map(select(.current)) | map (.name) | .[0]'
-    """).strip())
+    watch = Watch()
+    watch.initialize()
+
+    data = json.loads(watch.run(['show', 'walking.speed', '--json']))
+    speed, = [x['name'] for x in data['splits'] if x['current']]
+
     new_speed = next_speed(speed, incr)
-    bt('superwatch.sh split walking.speed -n {}'.format(new_speed))
+    watch.run(['split', 'walking.speed', '-n', new_speed])
+    print 'Stopping watch'
+    watch.stop()
+
     print 'speed', new_speed
 
 def next_incline(incline, incr):
@@ -68,34 +90,45 @@ def next_speed(incline, incr):
     return change_setting(SPEEDS, incline, incr)
 
 def reset_settings():
-    bt('superwatch.sh split walking.speed -n {}'.format(SPEEDS[0]))
-    bt('superwatch.sh split walking.incline -n {}'.format(INCLINES[0]))
+    watch = Watch()
+    watch.initialize()
+
+    watch.run(['split', 'walking.speed', '-n', SPEEDS[0]])
+    watch.run(['split', 'walking.incline', '-n', INCLINES[0]])
+    watch.stop()
 
 def get_distance(clock='walking.speed', start=None, end=None):
     "Distance walked in kilometers per hour"
+    import numpy # numpy takes 3-4 milliseconds to import
     data = load_play(clock, start=start, end=end)
     return sum(numpy.diff(data[:, 0]) * map(float, data[1:, 1])) / 3600
 
 def show():
+    watch = Watch()
+    watch.initialize()
     print 'speeds'
-    print bt('superwatch.sh show walking.speed | tail -n 10')
+    print ''.join(watch.run(['show', 'walking.speed']).splitlines()[-10:])
     print 'inclines'
-    print bt('superwatch.sh show walking.incline | tail -n 10')
+    print ''.join(watch.run(['show', 'walking.incline']).splitlines()[-10:])
 
 def show_all():
+    watch = Watch()
+    watch.initialize()
     print 'speeds'
-    print bt('superwatch.sh show walking.speed')
+    print watch.run(['show', 'walking.speed'])
     print 'inclines'
-    print bt('superwatch.sh show walking.incline')
+    print watch.run(['show', 'walking.incline'])
 
 def stop():
-    bt('superwatch.sh stop walking.speed')
-    bt('superwatch.sh stop walking.incline')
+    watch = Watch()
+    watch.initialize()
+    watch.run(['stop', 'walking.speed'])
+    watch.run(['stop', 'walking.incline'])
     timestamp = datetime.datetime.now().strftime(MINUTE_SPEC)
-    bt('superwatch.sh save walking.speed walking.speed.{}'.format(timestamp))
-    bt('superwatch.sh save walking.incline walking.incline.{}'.format(timestamp))
-    bt('superwatch.sh delete walking.speed')
-    bt('superwatch.sh delete walking.incline')
+    watch.run(['save', 'walking.speed', 'walking.speed.{}'.format(timestamp)])
+    watch.run(['save', 'walking.incline', 'walking.incline.{}'.format(timestamp)])
+    watch.run(['delete', 'walking.speed'])
+    watch.run(['delete', 'walking.incline'])
     print 'Done walking'
 
 def _get_clocks_for_day(seek_day):
