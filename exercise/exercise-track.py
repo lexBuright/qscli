@@ -12,12 +12,14 @@ import decimal
 import json
 import logging
 import os
+import random
 import subprocess
 import sys
 import time
 import unittest
 
 import fasteners
+
 import guiutils
 import walking
 from histogram import Histogram
@@ -140,8 +142,21 @@ def main():
     elif args.action == 'test':
         sys.argv[1:] = []
         unittest.main()
+    elif args.action == 'random-suggestion':
+        random_suggestion()
     else:
         raise ValueError(args.action)
+
+def random_suggestion():
+    endurance_exercises = Data.get_endurance_exercises()
+    repetition_exercises = Data.get_rep_exercises()
+
+    with with_data(DATA_FILE) as data:
+        ignore_list = Data.get_to_ignore(data)
+
+    exercise_type, choices = random.choice([('endurance', endurance_exercises), ('repetition', repetition_exercises)])
+    exercise = random.choice([x for x in choices if x not in ignore_list])
+    print '{}: {}'.format(exercise_type, exercise)
 
 def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
@@ -156,6 +171,8 @@ def build_parser():
     parsers.add_parser('speed-down')
     parsers.add_parser('show')
     parsers.add_parser('show-all')
+
+    parsers.add_parser('random-suggestion')
 
     set_versus = parsers.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
