@@ -27,12 +27,19 @@ class CliClient(object):
             raise Exception('Command errored out {!r} {!r}'.format(command_string, data))
         return data['output']
 
-    def stop(self):
+    def shutdown(self):
         self._proc.stdin.close()
         self._proc.wait()
 
     def __del__(self):
-        self.stop()
+        self.shutdown()
+
+    def __enter__(self):
+        self.initialize()
+        return self
+
+    def __exit__(self, exc_type, exc_info, tb):
+        self.shutdown()
 
 def escape_whitespace(command):
     return command.replace('\\', '\\\\').replace(' ', '\ ').replace('\n', '\\n')

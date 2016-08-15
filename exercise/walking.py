@@ -9,7 +9,7 @@ import subprocess
 from histogram import Histogram
 from watch import Watch
 
-LOGGER = logging.getLogger()
+LOGGER = logging.getLogger('walking')
 
 MINUTE_SPEC = '%Y-%m-%dT%H%M'
 
@@ -83,7 +83,7 @@ def change_incline(incr):
     incline, = [x['name'] for x in data['splits'] if x['current']]
     new_incline = next_incline(incline, incr)
     watch.run(['split', 'walking.incline', '-n', new_incline])
-    watch.stop()
+    watch.shutdown()
 
     print 'incline', new_incline
 
@@ -97,7 +97,7 @@ def change_speed(incr):
     new_speed = next_speed(speed, incr)
     watch.run(['split', 'walking.speed', '-n', new_speed])
     print 'Stopping watch'
-    watch.stop()
+    watch.shutdown()
 
     print 'speed', new_speed
 
@@ -113,7 +113,7 @@ def reset_settings():
 
     watch.run(['split', 'walking.speed', '-n', SPEEDS[0]])
     watch.run(['split', 'walking.incline', '-n', INCLINES[0]])
-    watch.stop()
+    watch.shutdown()
 
 def get_distance(clock='walking.speed', start=None, end=None):
     "Distance walked in kilometers per hour"
