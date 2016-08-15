@@ -125,9 +125,9 @@ def show():
     watch = Watch()
     watch.initialize()
     print 'speeds'
-    print ''.join(watch.run(['show', 'walking.speed']).splitlines()[-10:])
+    print '\n'.join(watch.run(['show', 'walking.speed']).splitlines()[-10:])
     print 'inclines'
-    print ''.join(watch.run(['show', 'walking.incline']).splitlines()[-10:])
+    print '\n'.join(watch.run(['show', 'walking.incline']).splitlines()[-10:])
 
 def show_all():
     watch = Watch()
@@ -143,8 +143,8 @@ def stop():
     watch.run(['stop', 'walking.speed'])
     watch.run(['stop', 'walking.incline'])
     timestamp = datetime.datetime.now().strftime(MINUTE_SPEC)
-    watch.run(['save', 'walking.speed', 'walking.speed.{}'.format(timestamp)])
-    watch.run(['save', 'walking.incline', 'walking.incline.{}'.format(timestamp)])
+    watch.run(['move', 'walking.speed', 'walking.speed.{}'.format(timestamp)])
+    watch.run(['move', 'walking.incline', 'walking.incline.{}'.format(timestamp)])
     watch.run(['delete', 'walking.speed'])
     watch.run(['delete', 'walking.incline'])
     print 'Done walking'
