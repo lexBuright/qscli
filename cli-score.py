@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/python
 """Stupidly feature-complete command line tool to keep track of scores;
 Quickly gameify any activity.
 
@@ -14,9 +14,11 @@ Example usage:
 import argparse
 import contextlib
 import copy
+import datetime
 import itertools
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -26,6 +28,8 @@ from io import StringIO
 
 import fasteners
 
+import jsdb
+
 PARSER = argparse.ArgumentParser(description='')
 
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'cli-score')
@@ -34,30 +38,33 @@ PARSER = argparse.ArgumentParser(description='')
 PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
 parsers = PARSER.add_subparsers(dest='command')
 
-store_command = parsers.add_parser('store', help='', aliases=['s'])
+store_command = parsers.add_parser('store', help='Store a score')
 store_command.add_argument('metric', type=str)
 store_command.add_argument('value', type=float)
 
-update_command = parsers.add_parser('update', help='', aliases=['u'])
+log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
+log_command.add_argument('--regex', '-x', type=re.compile, help='Only return scores whose names match this regexp')
+log_command.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+log_command.add_argument('--json', action='store_true', help='Output results in machine readable json')
+
+update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
 update_command.add_argument('metric', type=str)
 update_command.add_argument('value', type=float)
 update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
 
-delete_command = parsers.add_parser('delete', help='Delete a metric', aliases=['rm'])
+delete_command = parsers.add_parser('delete', help='Delete a metric')
 delete_command.add_argument('metric', type=str)
 
-move_command = parsers.add_parser('move', help='Rename a metric', aliases=['rm'])
+move_command = parsers.add_parser('move', help='Rename a metric')
 move_command.add_argument('old_name', type=str)
 move_command.add_argument('new_name', type=str)
-
-
 
 backup_command = parsers.add_parser('backup', help='Dump out all data to standard out')
 
 restore_command = parsers.add_parser('restore', help='Dump out all data to standard out')
 
 def metric_command(parsers, name):
-    command = parsers.add_parser(name, help='', aliases=[name[0]])
+    command = parsers.add_parser(name, help='')
     command.add_argument('metric', type=str)
     return command
 
@@ -85,7 +92,7 @@ def read_json(filename):
         return dict(version=1)
 
 @contextlib.contextmanager
-def with_data(data_file):
+def with_json_data(data_file):
     "Read from a json file, write back to it when we are finished"
     with fasteners.InterProcessLock(data_file + '.lck'):
         data = read_json(data_file)
@@ -95,6 +102,21 @@ def with_data(data_file):
         output_data = json.dumps(data)
         with open(data_file, 'w') as stream:
             stream.write(output_data)
+
+@contextlib.contextmanager
+def with_jsdb_data(data_file):
+    db = jsdb.Jsdb(data_file)
+    with db:
+        try:
+            yield db
+        except:
+            db.rollback()
+            raise
+        else:
+            db.commit()
+
+
+with_data = with_jsdb_data
 
 
 DATA_VERSION = 1
@@ -147,7 +169,7 @@ def run(arguments, stdin):
     if not os.path.isdir(options.config_dir):
         os.mkdir(options.config_dir)
 
-    data_file = os.path.join(options.config_dir, 'data.json')
+    data_file = os.path.join(options.config_dir, 'data.jsdb')
     with with_data(data_file) as data:
         # new_data = migrate_data(data, DATA_VERSION)
         # data.clear()
@@ -156,6 +178,12 @@ def run(arguments, stdin):
         if options.command == 'list':
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
+        elif options.command == 'log':
+            if options.days_ago is not None:
+                start_time, end_time = days_ago_bounds(options.days_ago)
+            else:
+                start_time = end_time = None
+            return log(data, json_output=options.json, name_regexp=options.regex, start_time=start_time, end_time=end_time)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
@@ -186,6 +214,12 @@ def run(arguments, stdin):
             return summary(metric_data, options.update)
         else:
             raise ValueError(options.command)
+
+def days_ago_bounds(days_ago):
+    start = datetime.datetime.now().replace(hour=0, second=0, microsecond=0) - datetime.timedelta(days=days_ago)
+    start_time = time.mktime(start.timetuple())
+    end_time = start_time + 3600 * 24
+    return start_time, end_time
 
 def get_metric_data(data, metric):
     metrics = data.setdefault('metrics', dict())
@@ -273,7 +307,7 @@ def get_last(metric_data):
 
 def summary(metric_data, update=False):
     last = get_last(metric_data)
-    messages = [str(last)]
+    messages = ['{:.2f}'.format(last)]
     last_rank = rank(metric_data)
     if last_rank == 0 and len(metric_data['values']) > 1:
         messages.append('New best')
@@ -321,6 +355,35 @@ def restore(data, backup):
     data.clear()
     backup_data = json.loads(backup)
     data.update(**backup_data)
+
+def log(data, json_output, name_regexp, start_time, end_time):
+    entries = []
+    for metric_name, metric in data['metrics'].items():
+        if name_regexp is not None and not name_regexp.search(metric_name):
+            continue
+
+        values = []
+        for value in jsdb.python_copy.copy(metric['values']):
+            if start_time and value['time'] < start_time:
+                continue
+            if end_time and value['time'] >= end_time:
+                continue
+
+            values.append(value)
+        for value in values:
+            value.update(metric=metric_name)
+        entries.extend(values)
+
+    entries.sort(key=lambda v: v['time'])
+
+    if json_output:
+        return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric']) for entry in entries])
+    else:
+        output = []
+        for entry in entries:
+            output.append('{} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry['value']))
+        return '\n'.join(output)
+
 
 class TestCli(unittest.TestCase):
     def cli(self, command, input=''):
