@@ -156,6 +156,7 @@ def _get_clocks_for_day(seek_day):
             if clock == 'walking.speed':
                 date = today
             else:
+                LOGGER.debug('Considering clock %r', clock)
                 _, date_string = clock.rsplit('.', 1)
                 date = datetime.datetime.strptime(date_string, MINUTE_SPEC).date()
 
