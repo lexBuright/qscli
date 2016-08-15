@@ -23,7 +23,7 @@ import fasteners
 import guiutils
 import walking
 from histogram import Histogram
-
+from watch import Watch
 
 LOGGER = logging.getLogger()
 
@@ -44,6 +44,13 @@ def set_versus_days_ago(days_ago):
     with with_data(DATA_FILE) as data:
         data['versus_days'] = days_ago
 
+def days_ago_option(parser):
+    parser.add_argument(
+        'days_ago',
+        type=int,
+        help='How many days ago to compare to',
+        nargs='?')
+
 def main():
     #pylint: disable=too-many-branches
     parser = build_parser()
@@ -59,7 +66,7 @@ def main():
         set_versus_days_ago(get_versus_days_ago() + 1)
         print get_versus_days_ago()
     elif args.action == 'decr-versus-days':
-        set_versus_days_ago(get_versus_days_ago() + 1)
+        set_versus_days_ago(max(get_versus_days_ago() - 1, 1))
         print get_versus_days_ago()
     elif args.action == 'reset-versus-days':
         set_versus_days_ago(1)
@@ -76,6 +83,8 @@ def main():
         walking.show()
     elif args.action == 'show-all':
         walking.show_all()
+    elif args.action == 'set-score':
+        record_score(args.exercise, args.score)
     elif args.action == 'rep-start':
         # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)
@@ -88,6 +97,14 @@ def main():
         backticks(['cli-count.py', 'note', args.note])
     elif args.action == 'rep':
         record_rep()
+    elif args.action == 'set-endurance':
+        set_endurance_exercise(args.exercise)
+    elif args.action == 'start-endurance':
+        start_endurance_exercise(args.exercise)
+    elif args.action == 'endurance-stats':
+        endurance_stats()
+    elif args.action == 'stop-endurance':
+        stop_endurance_exercise()
     elif args.action == 'aggregates':
         aggregates_for_speeds(walking.get_current_speed_histogram())
     elif args.action == 'daily-aggregates':
@@ -110,13 +127,17 @@ def main():
             print time.time() - start
         stop_sprint(duration)
     elif args.action == 'rep-versus':
-        show_rep_comparison(args.days_ago if args.days_ago is not None else get_versus_days_ago())
+        days_ago = args.days_ago if args.days_ago is not None else get_versus_days_ago()
+        show_rep_comparison(days_ago)
+    elif args.action == 'endurance-versus':
+        days_ago = args.days_ago if args.days_ago is not None else get_versus_days_ago()
+        show_endurance_comparison(days_ago)
     elif args.action == 'rep-set-score':
         # Perhaps this could all be done
         #    better with a single configuration file edited hand
         #    but to actually be useable this
         #    needs to be easy and *fun* to change
-        exercise_set_score(args.exercise, args.days_ago, args.score)
+        exercise_set_rep_score(args.exercise, args.days_ago, args.score)
     elif args.action == 'rep-ignore':
         activities = args.activity or []
         with with_data(DATA_FILE) as data:
@@ -130,11 +151,16 @@ def main():
 
         print '\n'.join(ignore_list)
     elif args.action == 'versus':
-        print 'Today versus {} days ago'.format(args.days)
+        days_ago = args.days if args.days is not None else get_versus_days_ago()
+        versus_summary(days_ago)
+    elif args.action == 'walking-versus':
+        days_ago = args.days if args.days is not None else get_versus_days_ago()
+
+        print 'Today versus {} days ago'.format(days_ago)
         time_at_speed1 = walking.get_speed_histogram_for_day(
             datetime.date.today())
         time_at_speed2 = walking.get_speed_histogram_for_day(
-            (datetime.datetime.now() - datetime.timedelta(days=args.days)).date())
+            (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
         versus_clocks(time_at_speed1, time_at_speed2)
     elif args.action == 'reset':
         walking.reset_settings()
@@ -158,6 +184,58 @@ def random_suggestion():
     exercise = random.choice([x for x in choices if x not in ignore_list])
     print '{}: {}'.format(exercise_type, exercise)
 
+def set_endurance_exercise(exercise):
+    if exercise is None:
+        raise Exception('Must specify an exercise')
+
+    if exercise == PROMPT:
+        exercise_name = guiutils.combo_prompt('endurance exercise', Data.get_endurance_exercises())
+
+    if exercise_name == '':
+        return
+    Data.set_endurance_exercise(exercise_name)
+
+def start_endurance_exercise(exercise):
+    exercise = Data.get_endurance_exercise(None) or exercise
+
+    with Watch() as watch:
+        watch.run(['start', 'exercise-endurance'])
+
+    backticks(['cli-score.py', 'store', 'exercise.endurance.{}'.format(exercise), '0'])
+    print 'Starting endurance exercise: {}'.format(exercise)
+
+def stop_endurance_exercise():
+    exercise = Data.get_endurance_exercise()
+
+    with Watch() as watch:
+        watch.run(['stop', 'exercise-endurance'])
+        data = json.loads(watch.run(['show', 'exercise-endurance', '--json']))
+
+    duration = data['duration']
+
+    print 'Finished'
+    backticks(['cli-score.py', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
+    summary = backticks(['cli-score.py', 'summary', 'exercise.endurance.{}'.format(exercise)])
+    print exercise
+    print summary
+
+def endurance_stats():
+    exercise = Data.get_endurance_exercise() or exercise
+
+    with Watch() as watch:
+        data = json.loads(watch.run(['show', 'exercise-endurance', '--json']))
+
+    duration = data['duration']
+    backticks(['cli-score.py', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
+    summary = backticks(['cli-score.py', 'summary', 'exercise.endurance.{}'.format(exercise)])
+    print exercise
+    print summary
+
+def exercise_prompt(parser):
+    parser.add_argument('--exercise', type=str)
+    parser.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
     parser.add_argument('--debug', action='store_true', help='Print debug output')
@@ -174,10 +252,29 @@ def build_parser():
 
     parsers.add_parser('random-suggestion')
 
+    set_endurance = parsers.add_parser('set-endurance')
+    exercise_prompt(set_endurance)
+
+    start_endurance = parsers.add_parser('start-endurance')
+    start_endurance.add_argument('--exercise', type=str)
+
+    stop_endurance = parsers.add_parser('stop-endurance')
+
+    endurance_stats = parsers.add_parser('endurance-stats')
+
     set_versus = parsers.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
 
-    rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a particular exercise')
+    parsers.add_parser('incr-versus-days')
+    parsers.add_parser('decr-versus-days')
+
+    set_score = parsers.add_parser('set-score', help='Set the score for a particular exercise')
+    set_score.add_argument('--exercise', type=str)
+    set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+    set_score.add_argument('--score', type=float)
+    set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
+
+    rep_set_score = parsers.add_parser('rep-set-score', help='Set the score for a rep based exercise exercise')
     rep_set_score.add_argument('--exercise', type=str)
     rep_set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=PROMPT, help='Prompt for the exercise with a graphical pop up')
     rep_set_score.add_argument('--score', type=float)
@@ -203,19 +300,20 @@ def build_parser():
     parsers.add_parser('test')
 
     rep_versus = parsers.add_parser('rep-versus')
-    rep_versus.add_argument(
-        'days_ago',
-        default=1,
-        type=int,
-        help='How many days ago to compare to')
+    days_ago_option(rep_versus)
+
+    endurance_versus = parsers.add_parser('endurance-versus')
+    days_ago_option(endurance_versus)
+
+    walking_versus = parsers.add_parser('walking-versus')
+    walking_versus.add_argument('days', default=1, type=int, help='Compare to this many days ago', nargs='?')
 
     versus = parsers.add_parser('versus')
-
     versus.add_argument(
         'days',
-        default=1,
         type=int,
-        help='How many days ago to compare to')
+        help='How many days ago to compare to',
+        nargs='?')
 
     parsers.add_parser('reset')
     return parser
@@ -281,6 +379,24 @@ def record_rep():
     backticks(['cli-score.py', 'update', exercise_score, str(count)])
     print backticks(['cli-score.py', 'summary', exercise_score, '--update'])
 
+def record_score(exercise_name, score):
+    if exercise_name == PROMPT:
+        exercise_name = guiutils.combo_prompt('exercise', Data.get_score_exercises())
+        pass
+
+    if score == PROMPT:
+        score = guiutils.float_prompt('Score:')
+
+    if exercise_name is None:
+        raise Exception('Must specify exercise')
+    if score is None:
+        raise Exception('Must specify score')
+
+    store_name = 'exercise.{}'.format(exercise_name)
+    backticks(['cli-score.py', 'store', store_name, str(score)])
+    print backticks(['cli-score.py', 'summary', store_name, '--update'])
+
+
 def versus_clocks(time_at_speed1, time_at_speed2):
     if time_at_speed2.empty():
         print 'No data to compare to'
@@ -329,20 +445,12 @@ Points = collections.namedtuple('Points', 'total uncounted unscored_exercises')
 
 def calculate_points(data, days_ago):
     by_exercise_scores = Data.get_exercise_scores(data)
-    today_json = json.loads(backticks([
-        'cli-count.py',
-        'summary',
-        '--days-ago',
-        str(days_ago),
-        '--json']))
-
-    today_counts = [
-        dict_replace(x, name=x['name'].split('.', 1)[1]) for x in today_json['counts'] if x['name'].startswith('exercise.')]
+    counts = Data.get_exercise_counts(days_ago)
 
     total = 0
     uncounted = 0
     unscored_exercises = set()
-    for count in today_counts:
+    for count in counts:
         score = by_exercise_scores.get(count['name'])
         if score:
             activity_total = score.last_value() * count['count']
@@ -354,7 +462,6 @@ def calculate_points(data, days_ago):
 
 def show_rep_comparison(days_ago):
     with with_data(DATA_FILE) as data:
-
         ignore_date = data.get('versus.rep.ignore.date')
         ignore_date = ignore_date and datetime.date(*ignore_date)
 
@@ -366,8 +473,7 @@ def show_rep_comparison(days_ago):
         today_points = calculate_points(data, 0)
         old_points = calculate_points(data, days_ago)
 
-    print backticks(['cli-score.py', 'summary', 'exercise.daily-points', '--update'])
-
+    print backticks(['cli-score.py', 'summary', 'exercise-score.daily-points', '--update'])
     print 'Points:', old_points.total, today_points.total
 
     if today_points.uncounted + old_points.uncounted:
@@ -387,6 +493,60 @@ def show_rep_comparison(days_ago):
     results = [result for result in results if result[0] not in to_ignore]
     print '\n'.join(['{} {} {}'.format(*r) for r in results])
 
+class EnduranceScores(object):
+    def __init__(self, scores):
+        self._scores = scores
+
+    def num_types(self):
+        return len(set(score['metric'] for score in self._scores))
+
+    def total_seconds(self):
+        return sum(score['value'] for score in self._scores)
+
+    def by_exercise(self):
+        result = dict()
+        for score in self._scores:
+            metric_dict = result.setdefault(score['metric'], dict())
+            metric_dict['total_seconds'] = metric_dict.get('total_seconds', 0) + score['value']
+            metric_dict.setdefault('values', list()).append(score['value'])
+
+        for key in result:
+            result[key]['values'].sort()
+
+        return result
+
+
+
+def show_endurance_comparison(days_ago):
+    today_scores = Data.get_endurance_scores(0)
+    compare_day_scores = Data.get_endurance_scores(days_ago)
+
+    print 'Num types', compare_day_scores.num_types(), today_scores.num_types()
+    print 'Total time', compare_day_scores.total_seconds(), today_scores.total_seconds()
+
+    today_by_exercise = today_scores.by_exercise()
+    compare_day_by_exercise = compare_day_scores.by_exercise()
+
+    all_exercises = list(set(today_by_exercise) | set(compare_day_by_exercise))
+    all_exercises.sort(
+        key=lambda x: (compare_day_by_exercise[x]["total"] if x in today_by_exercise else 0) - (today_by_exercise[x]["total"] if x in today_by_exercise else 0)
+    )
+
+    for exercise in all_exercises:
+        today_duration = today_by_exercise[exercise]["total_seconds"] if exercise in today_by_exercise else 0.0
+        compare_day_duration = compare_day_by_exercise[exercise]["total_seconds"] if exercise in compare_day_by_exercise else 0.0
+
+        compare_day_scores = compare_day_by_exercise[exercise]['values'] if exercise in compare_day_by_exercise else []
+        today_scores = today_by_exercise[exercise]['values'] if exercise in today_by_exercise else []
+
+        print exercise
+        print '    Total {:.1f} {:.1f}'.format(compare_day_duration, today_duration)
+        print '    Best {:.1f} {:.1f}'.format(max(compare_day_scores) if compare_day_scores else 0, max(today_scores) if today_scores else 0)
+        print '    Comparison scores', ' '.join('{:.1f}'.format(x) for x in compare_day_scores)
+        print '    Today scores', ' '.join('{:.1f}'.format(x) for x in today_scores)
+        print ''
+
+
 def start_sprint(duration):
     backticks(['superwatch.sh', 'start', 'walking.sprint.{}'.format(duration)])
 
@@ -405,7 +565,7 @@ class ScoreTimeSeries(object):
     def last_value(self):
         return self.time_series[-1][1]
 
-def exercise_set_score(exercise, days_ago, score):
+def exercise_set_rep_score(exercise, days_ago, score):
     if exercise == PROMPT:
         rep_exercises = Data.get_rep_exercises(days_ago)
         with with_data(DATA_FILE) as data:
@@ -446,6 +606,7 @@ def with_data(data_file):
         with open(data_file, 'w') as stream:
             stream.write(output_data)
 
+MISSING = object()
 
 class Data(object):
     @staticmethod
@@ -460,8 +621,43 @@ class Data(object):
         return exercises
 
     @staticmethod
+    def set_endurance_exercise(exercise):
+        with with_data(DATA_FILE) as data:
+            data['endurance_exercise'] = exercise
+
+    @staticmethod
+    def get_endurance_exercise(default=MISSING):
+        with with_data(DATA_FILE) as data:
+            if default != MISSING:
+                return data.get('endurance_exercise', default)
+            else:
+                return data['endurance_exercise']
+
+    @staticmethod
+    def get_endurance_scores(days_ago):
+        data = json.loads(backticks(['cli-score.py', 'log', '--regex', '^exercise\\.endurance\\.', '--days-ago', str(days_ago), '--json']))
+        data = [dict(metric=entry['metric'], value=entry['value'], time=entry['time']) for entry in data]
+        return EnduranceScores(data)
+
+    @staticmethod
     def get_exercise_scores(data):
         return {k: ScoreTimeSeries(v) for (k, v) in data.get('rep.scores.by.exercise', {}).items()}
+
+    @staticmethod
+    def get_endurance_exercises():
+        return [x.split('.', 2)[2] for x in backticks(['cli-score.py', 'list']).splitlines() if x.startswith('exercise.endurance.')]
+
+    @staticmethod
+    def get_endurance_results(days_ago):
+        pass
+
+    @staticmethod
+    def get_rep_exercises():
+        return [x.split('.', 1)[1].strip('\n') for x in backticks(['cli-count.py', 'list']).splitlines() if x.startswith('exercise.')]
+
+    @staticmethod
+    def get_score_exercises():
+        return [x.split('.', 1)[1] for x in backticks(['cli-score.py', 'list']).splitlines() if x.startswith('exercise.')]
 
     @staticmethod
     def set_exercise_score(data, exercise, score):
@@ -484,6 +680,18 @@ class Data(object):
         today = datetime.date.today()
         data['versus.rep.ignore'] = ignore_list
         data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
+
+    @staticmethod
+    def get_exercise_counts(days_ago):
+        data = json.loads(backticks([
+            'cli-count.py',
+            'summary',
+            '--days-ago',
+            str(days_ago),
+            '--json']))
+
+        return [
+            dict_replace(x, name=x['name'].split('.', 1)[1]) for x in data['counts'] if x['name'].startswith('exercise.')]
 
 
 # UTILITY FUNCTIONS
@@ -508,6 +716,35 @@ def backticks(command, stdin=None):
                 command,
                 process.returncode))
     return result
+
+def versus_summary(days_ago):
+    print 'Todays versus {} days ago'.format(days_ago)
+    print ''
+    with with_data(DATA_FILE) as data:
+        today_points = calculate_points(data, 0)
+        old_points = calculate_points(data, days_ago)
+
+    print 'Points:', old_points.total, today_points.total
+
+    if today_points.uncounted + old_points.uncounted:
+        print 'Uncounted:', today_points.uncounted + old_points.uncounted
+    if today_points.unscored_exercises:
+        print 'Unscored activities', ' '.join(sorted(set(today_points.unscored_exercises) | set(old_points.unscored_exercises)))
+
+    today_counts = Data.get_exercise_counts(0)
+    compare_day_counts = Data.get_exercise_counts(days_ago)
+
+    def rep_total(counts):
+        return sum(x['count'] for x in counts)
+
+    print 'Rep exercises', len(compare_day_counts), len(today_counts)
+    print 'Reps', rep_total(compare_day_counts), rep_total(today_counts)
+
+    today_endurance_scores = Data.get_endurance_scores(0)
+    compare_endurance_scores = Data.get_endurance_scores(days_ago)
+
+    print 'Endurance types', compare_endurance_scores.num_types(), today_endurance_scores.num_types()
+    print 'Endurance seconds {:.0f} {:.0f}'.format(compare_endurance_scores.total_seconds(), today_endurance_scores.total_seconds())
 
 def read_json(filename):
     if os.path.exists(filename):
