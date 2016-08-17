@@ -4,8 +4,8 @@
 
 Deals with things like retrying and validation and types.
 
-qs-prompt.py --prompt 'An integer' --type integer
-qs-prompt.py --prompt 'An integer' --type float
+qsprompt.py --prompt 'An integer' --type integer
+qsprompt.py --prompt 'An integer' --type float
 """
 
 import argparse
