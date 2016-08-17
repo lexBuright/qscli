@@ -4,8 +4,8 @@
 
 Deals with things like retrying and validation and types.
 
-cli-prompt.py --prompt 'An integer' --type integer
-cli-prompt.py --prompt 'An integer' --type float
+qs-prompt.py --prompt 'An integer' --type integer
+qs-prompt.py --prompt 'An integer' --type float
 """
 
 import argparse
@@ -59,8 +59,6 @@ while True:
             continue
 
     break
-
-
 
 
 print result
