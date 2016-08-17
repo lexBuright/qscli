@@ -18,6 +18,37 @@ INTEGER = 'integer'
 FLOAT = 'float'
 TYPES = (INTEGER, FLOAT)
 
+PARSER = argparse.ArgumentParser(description='')
+PARSER.add_argument('--type', choices=TYPES)
+PARSER.add_argument('--prompt', type=str)
+
+def main():
+    args = PARSER.parse_args()
+    
+    prompt = args.prompt
+    errored = False
+    
+    if args.type == INTEGER:
+        validation_re = '^[0-9]+$'
+    elif args.type == FLOAT:
+        validation_re = '^[0-9]+(\\.[0-9]*)?$'
+    else:
+        validation_re = None
+    
+    while True:
+        if args.type in (INTEGER, FLOAT):
+            result = backticks(['zenity', '--entry'] + (['--text', prompt] if prompt else []))
+    
+        if validation_re:
+            if not re.search(validation_re, result):
+                errored = True
+                prompt = 'Not {}. '.format(args.type) + (prompt if prompt else ' ')
+                time.sleep(0.5) # Give people time to press C-c
+                continue
+    
+        break
+    print result
+
 def backticks(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
@@ -32,33 +63,5 @@ def backticks(command):
         raise ValueError(process.returncode)
     return stdout
 
-PARSER = argparse.ArgumentParser(description='')
-PARSER.add_argument('--type', choices=TYPES)
-PARSER.add_argument('--prompt', type=str)
-args = PARSER.parse_args()
-
-prompt = args.prompt
-errored = False
-
-if args.type == INTEGER:
-    validation_re = '^[0-9]+$'
-elif args.type == FLOAT:
-    validation_re = '^[0-9]+(\\.[0-9]*)?$'
-else:
-    validation_re = None
-
-while True:
-    if args.type in (INTEGER, FLOAT):
-        result = backticks(['zenity', '--entry'] + (['--text', prompt] if prompt else []))
-
-    if validation_re:
-        if not re.search(validation_re, result):
-            errored = True
-            prompt = 'Not {}. '.format(args.type) + (prompt if prompt else ' ')
-            time.sleep(0.5) # Give people time to press C-c
-            continue
-
-    break
-
-
-print result
+if __name__ == '__main__':
+    main()
