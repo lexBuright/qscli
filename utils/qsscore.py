@@ -6,9 +6,9 @@ Designed to be useable programmatically, though you might prefer to use somethin
 database of ELK (elasticsearch logstash kibana) if you are being serious.
 
 Example usage:
-   cli-score.py store game 8
-   cli-score.py store game 9
-   cli-score.py best game
+   qsscore.py store game 8
+   qsscore.py store game 9
+   qsscore.py best game
 """
 
 import argparse
@@ -32,7 +32,7 @@ import jsdb
 
 PARSER = argparse.ArgumentParser(description='')
 
-DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'cli-score')
+DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
 
 PARSER = argparse.ArgumentParser(description='')
 PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
