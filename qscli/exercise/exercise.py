@@ -20,10 +20,10 @@ import unittest
 
 import fasteners
 
-import guiutils
-import walking
-from histogram import Histogram
-from watch import Watch
+from . import guiutils
+from . import walking
+from .histogram import Histogram
+from .watch import Watch
 
 LOGGER = logging.getLogger()
 
