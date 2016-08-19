@@ -13,7 +13,6 @@ superwatch.py split -l splitlabel
 superwatch.py label-split # label the current split (before it is finished)
 superwatch.py play clock1 clock2 # Output a csv of the clock labels every second
 
-
 # Multiple timers
 superwatch.py start timername
 superwatch.py show timername
@@ -75,8 +74,9 @@ class Superwatch(object):
     def clocks(self, quiet):
         with self.with_data() as data:
             for clock_name in sorted(data['clocks'].keys()):
+                LOGGER.debug('Considering clock %r', clock_name)
                 clock_data = data['clocks'][clock_name]
-                running_flag = '*' if clock_data['running'] else ''
+                running_flag = '*' if clock_data.get('running', False) else ''
                 clock_duration = (clock_data['stop'] or self.time_mod.time()) - clock_data['start']
                 if quiet:
                     yield '{}\n'.format(clock_name)

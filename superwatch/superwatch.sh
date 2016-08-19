@@ -7,4 +7,4 @@ here=$(dirname ${BASH_SOURCE[0]})
 PYTHONPATH=${PYTHONPATH:-}:$here
 export PYTHONPATH
 
-python -m superwatch "$@"
+python -u -m superwatch "$@"
