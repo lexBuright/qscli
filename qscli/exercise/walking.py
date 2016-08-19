@@ -151,7 +151,7 @@ def stop():
 
 def _get_clocks_for_day(seek_day):
     today = datetime.datetime.now().date()
-    for clock in bt('superwatch.sh clocks --quiet').splitlines():
+    for clock in bt('qswatch clocks --quiet').splitlines():
         if clock.startswith('walking.speed'):
             if clock == 'walking.speed':
                 date = today
@@ -193,14 +193,14 @@ def load_play(clock, start=None, end=None):
     import numpy # numpy takes 3-4 milliseconds to import
     start_string = '--after {} '.format(start) if start else ''
     end_string = '--before {} '.format(end) if start else ''
-    data_string = bt('superwatch.sh play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
+    data_string = bt('qswatch play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
     data = numpy.array([
         (float(line.split()[0]), decimal.Decimal(line.split()[1]))
         for line in data_string.splitlines()])
     return data
 
 def get_current_speed():
-    result = backticks(['superwatch.sh show walking.speed --json'])
+    result = backticks(['qswatch show walking.speed --json'])
     data = json.loads(result)
     return decimal.Decimal(data['splits'][-1]['name'])
 

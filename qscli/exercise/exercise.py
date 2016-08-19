@@ -546,11 +546,11 @@ def show_endurance_comparison(days_ago):
 
 
 def start_sprint(duration):
-    backticks(['superwatch.sh', 'start', 'walking.sprint.{}'.format(duration)])
+    backticks(['qswatch', 'start', 'walking.sprint.{}'.format(duration)])
 
 def stop_sprint(duration):
-    backticks(['superwatch.sh', 'stop', 'walking.sprint.{}'.format(duration)])
-    result = backticks(['superwatch.sh', 'show', '--json', 'walking.sprint.{}'.format(duration)])
+    backticks(['qswatch', 'stop', 'walking.sprint.{}'.format(duration)])
+    result = backticks(['qswatch', 'show', '--json', 'walking.sprint.{}'.format(duration)])
     data = json.loads(result)
     distance = walking.get_distance(start=data['start'], end=data['stop'])
     backticks(['qsscore', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
