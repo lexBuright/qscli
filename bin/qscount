@@ -2,4 +2,4 @@
 here="$(readlink -f $(dirname ${BASH_SOURCE[0]}))"
 PYTHONPATH="$PYTHONPATH:$here/.."
 export PYTHONPATH
-python -m "qscli.qscount" "$@"
+python -u -m "qscli.qscount" "$@"

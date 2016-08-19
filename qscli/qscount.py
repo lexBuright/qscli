@@ -26,6 +26,8 @@ import unittest
 
 import fasteners
 
+from . import ipc
+
 CURRENT = 'CURRENT'
 
 def get_set_id(string):
@@ -62,6 +64,8 @@ move.add_argument('after', type=str)
 merge = PARSERS.add_parser('merge', help='Merge together two counters')
 merge.add_argument('target', type=str)
 merge.add_argument('merged', type=str)
+
+PARSERS.add_parser('daemon')
 
 note = PARSERS.add_parser('note', help='Record a note about a counter')
 counter_arg(note)
@@ -146,13 +150,14 @@ def main():
         sys.argv.remove('--test')
         unittest.main()
     else:
-        print run(sys.argv[1:])
+        options = PARSER.parse_args(sys.argv[1:] or ['incr'])
+        print run(options)
 
 DATA_FILE = 'data'
 
-def run(args):
-    options = PARSER.parse_args(args or ['incr'])
-    del args
+def run(options):
+    if options.command == 'daemon':
+        return ipc.run_server(PARSER, run)
 
     with with_data(os.path.join(options.config_dir, DATA_FILE)) as data:
         counter = Counter(data)

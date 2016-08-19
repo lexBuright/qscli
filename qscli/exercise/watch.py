@@ -1,4 +1,4 @@
-from ipc import CliClient
+from qscli.ipc import CliClient
 
 class Watch(CliClient):
     def __init__(self):

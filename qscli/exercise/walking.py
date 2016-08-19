@@ -5,9 +5,8 @@ import json
 import logging
 import subprocess
 
-
-from histogram import Histogram
-from watch import Watch
+from .histogram import Histogram
+from .watch import Watch
 
 LOGGER = logging.getLogger('walking')
 
@@ -35,8 +34,6 @@ SPEEDS = [
     '17.0', '17.1', '17.2', '17.3', '17.4', '17.5', '17.6', '17.7', '17.8', '17.9', '18.0',
     '18.1', '18.2', '18.3', '18.4', '18.5', '18.6', '18.7', '18.8', '18.9', '19.0', '19.1',
     '19.2', '19.3', '19.4', '19.5', '19.6', '19.7', '19.8', '19.9', '20.0']
-
-
 
 def backticks(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True)
@@ -69,6 +66,7 @@ def change_setting(lst, value, incr):
     return lst[index]
 
 def start_walking():
+    LOGGER.debug('Starting walking')
     watch = Watch()
     watch.initialize()
     watch.run(['start', 'walking.speed', '-n', '0.8'])

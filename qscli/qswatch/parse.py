@@ -7,13 +7,14 @@ import time
 import traceback
 import unittest
 
+from qscli import ipc
+
 from . import config, qswatch
 from .config import DEFAULT_CLOCK
 # needed for unittest
 from .test import SuperTest  # pylint: disable=unused-import
 
 LOGGER = logging.getLogger()
-
 
 def run(data_dir, time_mod, stdout, args):
     args = args or ['toggle']
@@ -24,47 +25,12 @@ def run(data_dir, time_mod, stdout, args):
         logging.basicConfig(level=logging.DEBUG)
 
     if options.command == 'daemon':
-        run_daemon(data_dir, time_mod)
+        watch = qswatch.Watch(data_dir, time_mod)
+        ipc.run_daemon(PARSER, lambda options: watch_run(watch, options))
     else:
         watch = qswatch.Watch(data_dir, time_mod)
         for part in watch_run(watch, options):
             stdout.write(part)
-
-def run_daemon(data_dir, time_mod):
-    watch = qswatch.Watch(data_dir, time_mod)
-    while True:
-        command_string = sys.stdin.readline()
-        if command_string == '':
-            break
-        command = parse_command(command_string.strip('\n'))
-        try:
-            options = PARSER.parse_args(command)
-            result = ''.join(watch_run(watch, options))
-        except BaseException:
-            print json.dumps(dict(return_code=1, output='', error=traceback.format_exc()))
-        else:
-            print json.dumps(dict(return_code=0, output=result))
-
-def parse_command(command_string):
-    escaping = False
-    words = []
-    buff = []
-    for c in command_string:
-        if escaping:
-            buff.append(c)
-            escaping = False
-        else:
-            if c == '\\':
-                escaping = True
-            elif c == ' ':
-                words.append(''.join(buff))
-                buff[:] = []
-            else:
-                buff.append(c)
-
-
-    words.append(''.join(buff))
-    return words
 
 def get_tests():
     return unittest.makeSuite(SuperTest, 'test')

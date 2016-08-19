@@ -25,6 +25,8 @@ import fasteners
 
 import jsdb
 
+from . import ipc
+
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
 PARSER = argparse.ArgumentParser(description=__doc__)
 PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
@@ -33,6 +35,8 @@ parsers = PARSER.add_subparsers(dest='command')
 store_command = parsers.add_parser('store', help='Store a score')
 store_command.add_argument('metric', type=str)
 store_command.add_argument('value', type=float)
+
+parsers.add_parser('daemon', help='Run a daemon')
 
 log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
 log_command.add_argument('--regex', '-x', type=re.compile, help='Only return scores whose names match this regexp')
@@ -74,7 +78,8 @@ def main():
         sys.argv.remove('--test')
         unittest.main()
     else:
-        print(str(run(sys.argv[1:], sys.stdin)))
+        options = PARSER.parse_args(sys.argv[1:])
+        print(str(run(options, sys.stdin)))
 
 def read_json(filename):
     if os.path.exists(filename):
@@ -156,10 +161,12 @@ def down_migrate_data(data):
         del new_data['version']
     return new_data
 
-def run(arguments, stdin):
-    options = PARSER.parse_args(arguments)
+def run(options, stdin):
     if not os.path.isdir(options.config_dir):
         os.mkdir(options.config_dir)
+
+    if options.command == 'daemon':
+        return ipc.run_server(PARSER, lambda more_options: run(more_options, stdin))
 
     data_file = os.path.join(options.config_dir, 'data.jsdb')
     with with_data(data_file) as data:
