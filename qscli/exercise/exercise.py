@@ -90,7 +90,8 @@ def main():
         exercise_name = 'exercise.{}'.format(args.exercise_name)
         exercise_score = 'exercise-score.{}'.format(args.exercise_name)
 
-        backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
+        Data.set_rep_exercise(exercise_name)
+
         backticks(['qscount', 'new-set', exercise_name])
         backticks(['qsscore', 'store', exercise_score, '0'])
     elif args.action == 'rep-note':
@@ -334,11 +335,8 @@ def aggregates_for_speeds(time_at_speeds):
 def store_points(day, points):
     backticks(['qsscore', 'update', '--id', day.isoformat(), 'exercise-score.daily-points', str(points)])
 
-def get_current_exercise():
-    return backticks(['cli-alias', 'exercisetrack.exercise']).strip()
-
 def record_rep():
-    exercise_name = get_current_exercise()
+    exercise_name = Data.get_rep_exercise()
     exercise_score = 'exercise-score.' + exercise_name.split('.', 1)[1]
     versus_days = get_versus_days_ago()
 
@@ -624,6 +622,16 @@ class Data(object):
     def set_endurance_exercise(exercise):
         with with_data(DATA_FILE) as data:
             data['endurance_exercise'] = exercise
+
+    @staticmethod
+    def set_rep_exercise(exercise):
+        with with_data(DATA_FILE) as data:
+            data['rep_exercise'] = exercise
+
+    @staticmethod
+    def get_rep_exercise():
+        with with_data(DATA_FILE) as data:
+            return data['rep_exercise']
 
     @staticmethod
     def get_endurance_exercise(default=MISSING):
