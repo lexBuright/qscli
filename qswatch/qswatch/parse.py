@@ -7,7 +7,7 @@ import time
 import traceback
 import unittest
 
-from . import config, superwatch
+from . import config, qswatch
 from .config import DEFAULT_CLOCK
 # needed for unittest
 from .test import SuperTest  # pylint: disable=unused-import
@@ -26,12 +26,12 @@ def run(data_dir, time_mod, stdout, args):
     if options.command == 'daemon':
         run_daemon(data_dir, time_mod)
     else:
-        watch = superwatch.Superwatch(data_dir, time_mod)
+        watch = qswatch.Watch(data_dir, time_mod)
         for part in watch_run(watch, options):
             stdout.write(part)
 
 def run_daemon(data_dir, time_mod):
-    watch = superwatch.Superwatch(data_dir, time_mod)
+    watch = qswatch.Watch(data_dir, time_mod)
     while True:
         command_string = sys.stdin.readline()
         if command_string == '':
@@ -77,7 +77,7 @@ def main():
             logging.basicConfig(level=logging.DEBUG)
             args.remove('--debug')
         sys.argv = args
-        unittest.main(module='superwatch.parse', defaultTest='get_tests')
+        unittest.main(module='qswatch.parse', defaultTest='get_tests')
     else:
         sys.exit(run(config.DATA_DIR, time, sys.stdout, sys.argv[1:]))
 

@@ -13,7 +13,7 @@ import fasteners
 import jsdb
 import jsdb.python_copy
 
-DATA_FILE = 'superwatch.jsdb'
+DATA_FILE = 'qswatch.jsdb'
 DATA_LOCK = threading.Lock()
 
 @contextlib.contextmanager

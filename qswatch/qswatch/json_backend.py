@@ -10,7 +10,7 @@ import threading
 
 import fasteners
 
-DATA_FILE = 'superwatch.json'
+DATA_FILE = 'qswatch.json'
 
 def read_json(filename):
     if os.path.exists(filename):

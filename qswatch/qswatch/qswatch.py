@@ -2,24 +2,24 @@
 """Very feature-complete command line stopwatch / timer
 
 # Very simple mode
-superwatch.py # toggle the default stop watch (start or stop)
+qswatch # toggle the default stop watch (start or stop)
 
 # More complicated modes
-superwatch.py start
-superwatch.py show
-superwatch.py stop
-superwatch.py split
-superwatch.py split -l splitlabel
-superwatch.py label-split # label the current split (before it is finished)
-superwatch.py play clock1 clock2 # Output a csv of the clock labels every second
+qswatch start
+qswatch show
+qswatch stop
+qswatch split
+qswatch split -l splitlabel
+qswatch label-split # label the current split (before it is finished)
+qswatch play clock1 clock2 # Output a csv of the clock labels every second
 
 # Multiple timers
-superwatch.py start timername
-superwatch.py show timername
-superwatch.py stop timername
-superwatch.py split timername
+qswatch start timername
+qswatch show timername
+qswatch stop timername
+qswatch split timername
 
-If superwatch isn't quite super enough for you, you might want to look into timetrap.
+If qswatch isn't quite super enough for you, you might want to look into timetrap.
 """
 
 from . import jsdb_backend as backend
@@ -35,7 +35,7 @@ from . import config
 
 LOGGER = logging.getLogger(__name__)
 
-class Superwatch(object):
+class Watch(object):
     def __init__(self, data_dir, time_mod):
         self.data_dir = data_dir
         self.time_mod = time_mod
