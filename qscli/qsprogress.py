@@ -36,7 +36,7 @@ def with_data(data_file):
         with open(data_file, 'w') as stream:
             stream.write(output_data)
 
-DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'progress')
+DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'qsprogress')
 if not os.path.isdir(DATA_DIR):
     os.mkdir(DATA_DIR)
 
