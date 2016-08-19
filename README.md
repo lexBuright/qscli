@@ -15,6 +15,7 @@ A collection of low-level and high-level tools to collect, store, and interact w
 # Low-level tools
 
 - `qscount` - A very feature-complete tool for counting things
+- `qswatch` - A very feature-complete stopwatch, supporting multiple simultaneous clocks. Has certain overlaps with `timetrap`.
 - `qsscore` - A tool for keeping track of high scores, telling you statistics about them, and otherwise gamifying activities
 - `qsprogress` - A tool to provide feedback about progress through a task
 - `qsprompt` - A tool to prompt for data in a human-friendly way; designed as a high-level version of zenity
