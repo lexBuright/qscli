@@ -92,7 +92,7 @@ def main():
 
         backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
         backticks(['cli-count.py', 'new-set', exercise_name])
-        backticks(['cli-score.py', 'store', exercise_score, '0'])
+        backticks(['qsscore', 'store', exercise_score, '0'])
     elif args.action == 'rep-note':
         backticks(['cli-count.py', 'note', args.note])
     elif args.action == 'rep':
@@ -201,7 +201,7 @@ def start_endurance_exercise(exercise):
     with Watch() as watch:
         watch.run(['start', 'exercise-endurance'])
 
-    backticks(['cli-score.py', 'store', 'exercise.endurance.{}'.format(exercise), '0'])
+    backticks(['qsscore', 'store', 'exercise.endurance.{}'.format(exercise), '0'])
     print 'Starting endurance exercise: {}'.format(exercise)
 
 def stop_endurance_exercise():
@@ -214,8 +214,8 @@ def stop_endurance_exercise():
     duration = data['duration']
 
     print 'Finished'
-    backticks(['cli-score.py', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
-    summary = backticks(['cli-score.py', 'summary', 'exercise.endurance.{}'.format(exercise)])
+    backticks(['qsscore', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
+    summary = backticks(['qsscore', 'summary', 'exercise.endurance.{}'.format(exercise)])
     print exercise
     print summary
 
@@ -226,8 +226,8 @@ def endurance_stats():
         data = json.loads(watch.run(['show', 'exercise-endurance', '--json']))
 
     duration = data['duration']
-    backticks(['cli-score.py', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
-    summary = backticks(['cli-score.py', 'summary', 'exercise.endurance.{}'.format(exercise)])
+    backticks(['qsscore', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
+    summary = backticks(['qsscore', 'summary', 'exercise.endurance.{}'.format(exercise)])
     print exercise
     print summary
 
@@ -332,7 +332,7 @@ def aggregates_for_speeds(time_at_speeds):
     print 'Speed quartiles', quartile_string
 
 def store_points(day, points):
-    backticks(['cli-score.py', 'update', '--id', day.isoformat(), 'exercise-score.daily-points', str(points)])
+    backticks(['qsscore', 'update', '--id', day.isoformat(), 'exercise-score.daily-points', str(points)])
 
 def get_current_exercise():
     return backticks(['cli-alias', 'exercisetrack.exercise']).strip()
@@ -376,8 +376,8 @@ def record_rep():
     rate = count / duration if (count and duration) else 0
 
     print 'Rate: {:.2f}'.format(rate)
-    backticks(['cli-score.py', 'update', exercise_score, str(count)])
-    print backticks(['cli-score.py', 'summary', exercise_score, '--update'])
+    backticks(['qsscore', 'update', exercise_score, str(count)])
+    print backticks(['qsscore', 'summary', exercise_score, '--update'])
 
 def record_score(exercise_name, score):
     if exercise_name == PROMPT:
@@ -393,8 +393,8 @@ def record_score(exercise_name, score):
         raise Exception('Must specify score')
 
     store_name = 'exercise.{}'.format(exercise_name)
-    backticks(['cli-score.py', 'store', store_name, str(score)])
-    print backticks(['cli-score.py', 'summary', store_name, '--update'])
+    backticks(['qsscore', 'store', store_name, str(score)])
+    print backticks(['qsscore', 'summary', store_name, '--update'])
 
 
 def versus_clocks(time_at_speed1, time_at_speed2):
@@ -473,7 +473,7 @@ def show_rep_comparison(days_ago):
         today_points = calculate_points(data, 0)
         old_points = calculate_points(data, days_ago)
 
-    print backticks(['cli-score.py', 'summary', 'exercise-score.daily-points', '--update'])
+    print backticks(['qsscore', 'summary', 'exercise-score.daily-points', '--update'])
     print 'Points:', old_points.total, today_points.total
 
     if today_points.uncounted + old_points.uncounted:
@@ -555,8 +555,8 @@ def stop_sprint(duration):
     result = backticks(['superwatch.sh', 'show', '--json', 'walking.sprint.{}'.format(duration)])
     data = json.loads(result)
     distance = walking.get_distance(start=data['start'], end=data['stop'])
-    backticks(['cli-score.py', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
-    print backticks(['cli-score.py', 'summary', 'walking.sprint.{}'.format(duration)])
+    backticks(['qsscore', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
+    print backticks(['qsscore', 'summary', 'walking.sprint.{}'.format(duration)])
 
 class ScoreTimeSeries(object):
     def __init__(self, time_series):
@@ -635,7 +635,7 @@ class Data(object):
 
     @staticmethod
     def get_endurance_scores(days_ago):
-        data = json.loads(backticks(['cli-score.py', 'log', '--regex', '^exercise\\.endurance\\.', '--days-ago', str(days_ago), '--json']))
+        data = json.loads(backticks(['qsscore', 'log', '--regex', '^exercise\\.endurance\\.', '--days-ago', str(days_ago), '--json']))
         data = [dict(metric=entry['metric'], value=entry['value'], time=entry['time']) for entry in data]
         return EnduranceScores(data)
 
@@ -645,7 +645,7 @@ class Data(object):
 
     @staticmethod
     def get_endurance_exercises():
-        return [x.split('.', 2)[2] for x in backticks(['cli-score.py', 'list']).splitlines() if x.startswith('exercise.endurance.')]
+        return [x.split('.', 2)[2] for x in backticks(['qsscore', 'list']).splitlines() if x.startswith('exercise.endurance.')]
 
     @staticmethod
     def get_endurance_results(days_ago):
@@ -653,7 +653,7 @@ class Data(object):
 
     @staticmethod
     def get_score_exercises():
-        return [x.split('.', 1)[1] for x in backticks(['cli-score.py', 'list']).splitlines() if x.startswith('exercise.')]
+        return [x.split('.', 1)[1] for x in backticks(['qsscore', 'list']).splitlines() if x.startswith('exercise.')]
 
     @staticmethod
     def set_exercise_score(data, exercise, score):
