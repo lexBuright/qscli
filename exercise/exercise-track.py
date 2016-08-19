@@ -652,10 +652,6 @@ class Data(object):
         pass
 
     @staticmethod
-    def get_rep_exercises():
-        return [x.split('.', 1)[1].strip('\n') for x in backticks(['cli-count.py', 'list']).splitlines() if x.startswith('exercise.')]
-
-    @staticmethod
     def get_score_exercises():
         return [x.split('.', 1)[1] for x in backticks(['cli-score.py', 'list']).splitlines() if x.startswith('exercise.')]
 
