@@ -1,12 +1,10 @@
 #!/usr/bin/python
 """
-cli-count.py # Count some things
-cli-count.py show
-cli-count.py clear
-
-cli-count.py incr hops
-
-cli-count.py list # list the things that you are counting
+qscount # Count some things
+qscount show
+qscount clear
+qscount incr hops
+qscount list # list the things that you are counting
 
 """
 
@@ -39,7 +37,7 @@ def get_set_id(string):
 def counter_arg(parser):
     return parser.add_argument('counter', type=str, default='DEFAULT', help='What are you counter', nargs='?')
 
-DEFAULT_DATA_DIR = os.path.join(os.environ['HOME'], 'cli-data')
+DEFAULT_DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qscount')
 
 PARSER = argparse.ArgumentParser(description='')
 PARSER.add_argument('--config-dir', '-D', type=str, help='Use this directory to store data', default=DEFAULT_DATA_DIR)
@@ -466,10 +464,6 @@ class FakeTime(object):
             self._tick_events.append((expiry, event))
         event.wait()
         self._logger.debug('Sleep started at %r for %r expired', start_time, delay)
-
-
-
-
 
 if __name__ == '__main__':
 	main()
