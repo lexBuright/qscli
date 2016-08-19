@@ -749,7 +749,6 @@ def read_json(filename):
     else:
         return dict()
 
-
 class TrackTest(unittest.TestCase):
     def test_count_to_quantiles(self):
         hist = Histogram({0:20, 20:20, 40:20, 60:20, 80:20})
@@ -778,8 +777,3 @@ class TrackTest(unittest.TestCase):
         hist1 = Histogram({1:10, 2:5, 4:5, 7:1})
         hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
         self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
-
-
-
-if __name__ == '__main__':
-    main()
