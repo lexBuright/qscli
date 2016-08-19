@@ -1,14 +1,9 @@
 #!/usr/bin/python
-"""Stupidly feature-complete command line tool to keep track of scores;
+"""Stupidly feature-complete command-line tool to keep track of scores;
 Quickly gameify any activity.
 
 Designed to be useable programmatically, though you might prefer to use something like a
 database of ELK (elasticsearch logstash kibana) if you are being serious.
-
-Example usage:
-   qsscore.py store game 8
-   qsscore.py store game 9
-   qsscore.py best game
 """
 
 import argparse
@@ -30,11 +25,8 @@ import fasteners
 
 import jsdb
 
-PARSER = argparse.ArgumentParser(description='')
-
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
-
-PARSER = argparse.ArgumentParser(description='')
+PARSER = argparse.ArgumentParser(description=__doc__)
 PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
 parsers = PARSER.add_subparsers(dest='command')
 
