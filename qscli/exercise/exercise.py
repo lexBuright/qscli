@@ -91,10 +91,10 @@ def main():
         exercise_score = 'exercise-score.{}'.format(args.exercise_name)
 
         backticks(['cli-alias', '--set', 'exercisetrack.exercise'], stdin=exercise_name)
-        backticks(['cli-count.py', 'new-set', exercise_name])
+        backticks(['qscount', 'new-set', exercise_name])
         backticks(['qsscore', 'store', exercise_score, '0'])
     elif args.action == 'rep-note':
-        backticks(['cli-count.py', 'note', args.note])
+        backticks(['qscount', 'note', args.note])
     elif args.action == 'rep':
         record_rep()
     elif args.action == 'set-endurance':
@@ -359,9 +359,9 @@ def record_rep():
     print 'Points: {} (vs {})'.format(points.total, versus_points.total)
 
     print 'Count:', exercise_name
-    backticks(['cli-count.py', 'incr', exercise_name])
+    backticks(['qscount', 'incr', exercise_name])
 
-    events = json.loads(backticks(['cli-count.py', 'log', '--set', 'CURRENT', '--json', exercise_name]))
+    events = json.loads(backticks(['qscount', 'log', '--set', 'CURRENT', '--json', exercise_name]))
     if events:
         start = events['events'][0]['time']
         end = events['events'][-1]['time']
@@ -371,7 +371,7 @@ def record_rep():
 
     print 'Duration: {:.0f}'.format(duration)
 
-    count = backticks(['cli-count.py', 'count', '--set', 'CURRENT', exercise_name])
+    count = backticks(['qscount', 'count', '--set', 'CURRENT', exercise_name])
     count = int(count.strip())
     rate = count / duration if (count and duration) else 0
 
@@ -482,7 +482,7 @@ def show_rep_comparison(days_ago):
         print 'Unscored activities', ' '.join(sorted(set(today_points.unscored_exercises) | set(old_points.unscored_exercises)))
 
     results = json.loads(backticks([
-        'cli-count.py',
+        'qscount',
         'compare',
         '{} days ago'.format(days_ago), '+1d',
         'today', '+1d',
@@ -612,9 +612,9 @@ class Data(object):
     @staticmethod
     def get_rep_exercises(days_ago=None):
         if days_ago is not None:
-            counters = backticks(['cli-count.py', 'list', '--days-ago', str(days_ago)]).splitlines()
+            counters = backticks(['qscount', 'list', '--days-ago', str(days_ago)]).splitlines()
         else:
-            counters = backticks(['cli-count.py', 'list']).splitlines()
+            counters = backticks(['qscount', 'list']).splitlines()
 
         exercises = [x.split('.', 1)[1]
             for x in counters if x.startswith('exercise.')]
@@ -680,7 +680,7 @@ class Data(object):
     @staticmethod
     def get_exercise_counts(days_ago):
         data = json.loads(backticks([
-            'cli-count.py',
+            'qscount',
             'summary',
             '--days-ago',
             str(days_ago),
