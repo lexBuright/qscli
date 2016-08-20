@@ -1,5 +1,9 @@
 #!/usr/bin/python
 """
+Very feature complete utility to count things.
+
+Usage:
+
 qscount # Count some things
 qscount show
 qscount clear
