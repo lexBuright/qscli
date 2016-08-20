@@ -1,8 +1,10 @@
 import datetime
 import decimal
+import json
 
 from . import parsers, walking
 from .data import Data
+from .watch import Watch
 
 ARROW = {True: ">", False: "<"}
 
@@ -19,6 +21,10 @@ def add_subparser(parser):
     sub.add_parser('show-all')
     sub.add_parser('daily-aggregates')
     sub.add_parser('reset')
+    sub.add_parser('start-sprint')
+    sub.add_parser('stop-sprint')
+    record_sprint = sub.add_parser('record-sprint')
+    record_sprint.add_argument('duration', type=int, help='How long to sprint for')
     versus = sub.add_parser('versus')
     parsers.days_ago_option(versus)
 
@@ -56,6 +62,20 @@ def run(args):
         time_at_speed2 = walking.get_speed_histogram_for_day(
             (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
         versus_clocks(time_at_speed1, time_at_speed2)
+    elif args.walking_action == 'start-sprint':
+        start_sprint('free')
+    elif args.walking_action == 'stop-sprint':
+        stop_sprint('free')
+    elif args.walking_action == 'record-sprint':
+        duration = args.duration
+        display_period = 30
+        start = time.time()
+        start_sprint(duration)
+        end = start + duration
+        while time.time() < end:
+            time.sleep(min(end - time.time(), display_period))
+            print time.time() - start
+        stop_sprint(duration)
     else:
         raise ValueError(args.walking_action)
 
@@ -114,3 +134,16 @@ def versus_clocks(time_at_speed1, time_at_speed2):
             current_speed,
             time_at_speed2.quantile_at_value(current_speed),
             remaining_hist.quantile_at_value(current_speed))
+
+def start_sprint(duration):
+    with Watch() as watch:
+        watch.run(['start', 'walking.sprint.{}'.format(duration)])
+
+def stop_sprint(duration):
+    with Watch() as watch:
+        watch.run(['stop', 'walking.sprint.{}'.format(duration)])
+        result = watch.run(['show', '--json', 'walking.sprint.{}'.format(duration)])
+        data = json.loads(result)
+        distance = walking.get_distance(start=data['start'], end=data['stop'])
+        watch.run(['store', 'walking.sprint.{}'.format(duration), str(distance)])
+        print watch.run(['summary', 'walking.sprint.{}'.format(duration)])

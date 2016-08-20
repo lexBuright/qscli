@@ -4,18 +4,15 @@
 
 import argparse
 import decimal
-import json
 import logging
 import random
 import subprocess
 import sys
-import time
 import unittest
 
 from .data import Data, SCORER
 from . import reps, endurance, walk_args
 from . import guiutils
-from . import walking
 from . import const
 from .histogram import Histogram
 
@@ -39,6 +36,7 @@ def main():
     elif args.action == 'reset-versus-days':
         Data.set_versus_days_ago(1)
         print Data.get_versus_days_ago()
+
     elif args.action == 'set-score':
         record_score(args.exercise, args.score)
     elif args.action == 'reps':
@@ -47,20 +45,6 @@ def main():
         endurance.run(args)
     elif args.action == 'walking':
         walk_args.run(args)
-    elif args.action == 'start-sprint':
-        start_sprint('free')
-    elif args.action == 'stop-sprint':
-        stop_sprint('free')
-    elif args.action == 'record-sprint':
-        duration = args.duration
-        display_period = 30
-        start = time.time()
-        start_sprint(duration)
-        end = start + duration
-        while time.time() < end:
-            time.sleep(min(end - time.time(), display_period))
-            print time.time() - start
-        stop_sprint(duration)
 
     elif args.action == 'versus':
         days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
@@ -108,10 +92,6 @@ def build_parser():
     set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
 
 
-    sub.add_parser('start-sprint')
-    sub.add_parser('stop-sprint')
-    record_sprint = sub.add_parser('record-sprint')
-    record_sprint.add_argument('duration', type=int, help='How long to sprint for')
     sub.add_parser('test')
 
 
@@ -124,17 +104,6 @@ def build_parser():
 
     return parser
 
-
-def start_sprint(duration):
-    backticks(['qswatch', 'start', 'walking.sprint.{}'.format(duration)])
-
-def stop_sprint(duration):
-    backticks(['qswatch', 'stop', 'walking.sprint.{}'.format(duration)])
-    result = backticks(['qswatch', 'show', '--json', 'walking.sprint.{}'.format(duration)])
-    data = json.loads(result)
-    distance = walking.get_distance(start=data['start'], end=data['stop'])
-    backticks(['qsscore', 'store', 'walking.sprint.{}'.format(duration), str(distance)])
-    print backticks(['qsscore', 'summary', 'walking.sprint.{}'.format(duration)])
 
 # UTILITY FUNCTIONS
 
