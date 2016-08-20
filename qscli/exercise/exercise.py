@@ -1,10 +1,8 @@
-#!/usr/bin/python -u
 # -*- coding: utf-8 -*-
 
 # This is to be classified as useful glue code
 
 import argparse
-import datetime
 import decimal
 import json
 import logging
@@ -15,16 +13,13 @@ import time
 import unittest
 
 from .data import Data, SCORER
-from . import reps, endurance
+from . import reps, endurance, walk_args
 from . import guiutils
 from . import walking
 from . import const
 from .histogram import Histogram
-from . import parsers
 
 LOGGER = logging.getLogger()
-
-ARROW = {True: ">", False: "<"}
 
 def main():
     #pylint: disable=too-many-branches
@@ -33,9 +28,7 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if args.action == 'start':
-        walking.start_walking()
-    elif args.action == 'versus-days':
+    if args.action == 'versus-days':
         Data.set_versus_days_ago(args.days_ago)
     elif args.action == 'incr-versus-days':
         Data.incr_versus_days_ago(1)
@@ -46,33 +39,14 @@ def main():
     elif args.action == 'reset-versus-days':
         Data.set_versus_days_ago(1)
         print Data.get_versus_days_ago()
-    elif args.action == 'incline-up':
-        walking.change_incline(1)
-    elif args.action == 'incline-down':
-        walking.change_incline(-1)
-    elif args.action == 'speed-up':
-        walking.change_speed(1)
-    elif args.action == 'speed-down':
-        walking.change_speed(-1)
-    elif args.action == 'show':
-        walking.show()
-    elif args.action == 'show-all':
-        walking.show_all()
     elif args.action == 'set-score':
         record_score(args.exercise, args.score)
-
     elif args.action == 'reps':
         reps.run(args)
     elif args.action == 'endurance':
         endurance.run(args)
-
-    elif args.action == 'aggregates':
-        aggregates_for_speeds(walking.get_current_speed_histogram())
-    elif args.action == 'daily-aggregates':
-        aggregates_for_speeds(
-            walking.get_speed_histogram_for_day(datetime.date.today()))
-    elif args.action == 'stop':
-        walking.stop()
+    elif args.action == 'walking':
+        walk_args.run(args)
     elif args.action == 'start-sprint':
         start_sprint('free')
     elif args.action == 'stop-sprint':
@@ -91,18 +65,6 @@ def main():
     elif args.action == 'versus':
         days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
         versus_summary(days_ago)
-    elif args.action == 'walking-versus':
-        days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
-
-        print 'Today versus {} days ago'.format(days_ago)
-        time_at_speed1 = walking.get_speed_histogram_for_day(
-            datetime.date.today())
-        time_at_speed2 = walking.get_speed_histogram_for_day(
-            (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
-        versus_clocks(time_at_speed1, time_at_speed2)
-    elif args.action == 'reset':
-        walking.reset_settings()
-        print 'Speed and incline set to their minimum'
     elif args.action == 'test':
         sys.argv[1:] = []
         unittest.main()
@@ -124,18 +86,10 @@ def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
     parser.add_argument('--debug', action='store_true', help='Print debug output')
     sub = parser.add_subparsers(dest='action')
-    sub.add_parser('aggregates')
-    sub.add_parser('start')
-    sub.add_parser('stop')
-    sub.add_parser('incline-up')
-    sub.add_parser('speed-up')
-    sub.add_parser('incline-down')
-    sub.add_parser('speed-down')
-    sub.add_parser('show')
-    sub.add_parser('show-all')
 
     reps.add_subparser(sub.add_parser('reps', help='Actions related to recording reps'))
     endurance.add_subparser(sub.add_parser('endurance', help='Actions related to endurance exercise (do something for as long as possible)'))
+    walk_args.add_subparser(sub.add_parser('walking', help='Actions related to walking exercise (Varying speed over time)'))
 
     sub.add_parser('random-suggestion')
 
@@ -153,15 +107,13 @@ def build_parser():
     set_score.add_argument('--score', type=float)
     set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
 
-    sub.add_parser('daily-aggregates')
+
     sub.add_parser('start-sprint')
     sub.add_parser('stop-sprint')
     record_sprint = sub.add_parser('record-sprint')
     record_sprint.add_argument('duration', type=int, help='How long to sprint for')
     sub.add_parser('test')
 
-    walking_versus = sub.add_parser('walking-versus')
-    walking_versus.add_argument('days', default=1, type=int, help='Compare to this many days ago', nargs='?')
 
     versus = sub.add_parser('versus')
     versus.add_argument(
@@ -170,64 +122,7 @@ def build_parser():
         help='How many days ago to compare to',
         nargs='?')
 
-    sub.add_parser('reset')
     return parser
-
-def aggregates_for_speeds(time_at_speeds):
-    total_time = time_at_speeds.total()
-    distance = sum(
-        speed * time_at_speed / 3600
-        for (speed, time_at_speed) in time_at_speeds.counts())
-    quartiles = time_at_speeds.values_at_quantiles([0.0, 0.25, 0.5, 0.75, 1.0])
-    speed = distance / total_time * 1000.0
-    print '{:.2f}km'.format(distance)
-    print '{:.0f}s'.format(total_time)
-    print '{:.2f} m/s'.format(speed)
-    quartile_string = ' - '.join(['{:.2}'.format(q / 3.6) for q in quartiles])
-    print 'Speed quartiles', quartile_string
-
-def versus_clocks(time_at_speed1, time_at_speed2):
-    if time_at_speed2.empty():
-        print 'No data to compare to'
-        return
-    remaining_hist = time_at_speed2.subtract(time_at_speed1)
-
-    time_diff = time_at_speed1.total() - time_at_speed2.total()
-    zero_to_add1 = max(-time_diff, 0)
-    zero_to_add2 = max(time_diff, 0)
-
-    if zero_to_add1 > 0:
-        time_at_speed1.update({decimal.Decimal("0.0"): zero_to_add1})
-
-    if zero_to_add2 > 0:
-        time_at_speed2.update({decimal.Decimal("0.0"): zero_to_add2})
-
-    quarters = [0.0, 0.25, 0.5, 0.75, 1.00]
-    quarter_pairs = zip(
-        time_at_speed1.values_at_quantiles(quarters),
-        time_at_speed2.values_at_quantiles(quarters))
-
-    current_speed = walking.get_current_speed()
-
-    print ' -- '.join(
-        '{}{}{}'.format(
-            current,
-            ARROW[current - old >= 0],
-            old)
-        for current, old in quarter_pairs)
-
-    print 'Remaining time: {}/{} '.format(
-        remaining_hist.total(),
-        time_at_speed2.total())
-
-    if remaining_hist.empty():
-        print 'YOU HAVE WON!'
-    else:
-        print 'Remaining top:', remaining_hist.value_at_quantile(1.00)
-        print 'Current speed: {} (abs:{:.2f}, remaining:{:.2f})'.format(
-            current_speed,
-            time_at_speed2.quantile_at_value(current_speed),
-            remaining_hist.quantile_at_value(current_speed))
 
 
 def start_sprint(duration):
