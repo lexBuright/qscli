@@ -26,7 +26,7 @@ def run(data_dir, time_mod, stdout, args):
 
     if options.command == 'daemon':
         watch = qswatch.Watch(data_dir, time_mod)
-        ipc.run_daemon(PARSER, lambda options: watch_run(watch, options))
+        ipc.run_server(PARSER, lambda options: watch_run(watch, options))
     else:
         watch = qswatch.Watch(data_dir, time_mod)
         for part in watch_run(watch, options):

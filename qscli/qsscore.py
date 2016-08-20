@@ -112,9 +112,7 @@ def with_jsdb_data(data_file):
         else:
             db.commit()
 
-
 with_data = with_jsdb_data
-
 
 DATA_VERSION = 1
 
