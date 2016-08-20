@@ -6,7 +6,7 @@ from . import const, guiutils
 from .data import COUNTER, SCORER, Data
 from . import parsers
 
-def add_rep_subparser(parser):
+def add_subparser(parser):
     sub = parser.add_subparsers(dest='rep_action')
 
     set_score_ = sub.add_parser('set-score', help='Set the score for a rep based exercise exercise')
@@ -30,7 +30,7 @@ def add_rep_subparser(parser):
     note_parser = sub.add_parser('note')
     note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
 
-def rep_run(args):
+def run(args):
     if args.rep_action == 'start':
         # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)

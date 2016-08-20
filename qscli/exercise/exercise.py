@@ -15,12 +15,11 @@ import time
 import unittest
 
 from .data import Data, SCORER
-from . import reps
+from . import reps, endurance
 from . import guiutils
 from . import walking
 from . import const
 from .histogram import Histogram
-from .watch import Watch
 from . import parsers
 
 LOGGER = logging.getLogger()
@@ -61,16 +60,12 @@ def main():
         walking.show_all()
     elif args.action == 'set-score':
         record_score(args.exercise, args.score)
+
     elif args.action == 'reps':
-        reps.rep_run(args)
-    elif args.action == 'set-endurance':
-        set_endurance_exercise(args.exercise)
-    elif args.action == 'start-endurance':
-        start_endurance_exercise(args.exercise)
-    elif args.action == 'endurance-stats':
-        endurance_stats()
-    elif args.action == 'stop-endurance':
-        stop_endurance_exercise()
+        reps.run(args)
+    elif args.action == 'endurance':
+        endurance.run(args)
+
     elif args.action == 'aggregates':
         aggregates_for_speeds(walking.get_current_speed_histogram())
     elif args.action == 'daily-aggregates':
@@ -93,9 +88,6 @@ def main():
             print time.time() - start
         stop_sprint(duration)
 
-    elif args.action == 'endurance-versus':
-        days_ago = args.days_ago if args.days_ago is not None else Data.get_versus_days_ago()
-        show_endurance_comparison(days_ago)
     elif args.action == 'versus':
         days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
         versus_summary(days_ago)
@@ -128,58 +120,6 @@ def random_suggestion():
     exercise = random.choice([x for x in choices if x not in ignore_list])
     print '{}: {}'.format(exercise_type, exercise)
 
-def set_endurance_exercise(exercise):
-    if exercise is None:
-        raise Exception('Must specify an exercise')
-
-    if exercise == const.PROMPT:
-        exercise_name = guiutils.combo_prompt('endurance exercise', Data.get_endurance_exercises())
-
-    if exercise_name == '':
-        return
-    Data.set_endurance_exercise(exercise_name)
-
-def start_endurance_exercise(exercise):
-    exercise = Data.get_endurance_exercise(None) or exercise
-
-    with Watch() as watch:
-        watch.run(['start', 'exercise-endurance'])
-
-    backticks(['qsscore', 'store', 'exercise.endurance.{}'.format(exercise), '0'])
-    print 'Starting endurance exercise: {}'.format(exercise)
-
-def stop_endurance_exercise():
-    exercise = Data.get_endurance_exercise()
-
-    with Watch() as watch:
-        watch.run(['stop', 'exercise-endurance'])
-        data = json.loads(watch.run(['show', 'exercise-endurance', '--json']))
-
-    duration = data['duration']
-
-    print 'Finished'
-    backticks(['qsscore', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
-    summary = backticks(['qsscore', 'summary', 'exercise.endurance.{}'.format(exercise)])
-    print exercise
-    print summary
-
-def endurance_stats():
-    exercise = Data.get_endurance_exercise()
-
-    with Watch() as watch:
-        data = json.loads(watch.run(['show', 'exercise-endurance', '--json']))
-
-    duration = data['duration']
-    backticks(['qsscore', 'update', 'exercise.endurance.{}'.format(exercise), str(duration)])
-    summary = backticks(['qsscore', 'summary', 'exercise.endurance.{}'.format(exercise)])
-    print exercise
-    print summary
-
-def exercise_prompt(parser):
-    parser.add_argument('--exercise', type=str)
-    parser.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
-
-
 def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
     parser.add_argument('--debug', action='store_true', help='Print debug output')
@@ -194,18 +134,12 @@ def build_parser():
     sub.add_parser('show')
     sub.add_parser('show-all')
 
-    reps.add_rep_subparser(sub.add_parser('reps', help='Actions related to recording reps'))
+    reps.add_subparser(sub.add_parser('reps', help='Actions related to recording reps'))
+    endurance.add_subparser(sub.add_parser('endurance', help='Actions related to endurance exercise (do something for as long as possible)'))
 
     sub.add_parser('random-suggestion')
 
-    set_endurance = sub.add_parser('set-endurance')
-    exercise_prompt(set_endurance)
-
-    start_endurance = sub.add_parser('start-endurance')
-    start_endurance.add_argument('--exercise', type=str)
-
-    sub.add_parser('stop-endurance')
-    sub.add_parser('endurance-stats')
+    sub.add_parser('random-report')
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
@@ -225,9 +159,6 @@ def build_parser():
     record_sprint = sub.add_parser('record-sprint')
     record_sprint.add_argument('duration', type=int, help='How long to sprint for')
     sub.add_parser('test')
-
-    endurance_versus = sub.add_parser('endurance-versus')
-    parsers.days_ago_option(endurance_versus)
 
     walking_versus = sub.add_parser('walking-versus')
     walking_versus.add_argument('days', default=1, type=int, help='Compare to this many days ago', nargs='?')
@@ -297,35 +228,6 @@ def versus_clocks(time_at_speed1, time_at_speed2):
             current_speed,
             time_at_speed2.quantile_at_value(current_speed),
             remaining_hist.quantile_at_value(current_speed))
-
-def show_endurance_comparison(days_ago):
-    today_scores = Data.get_endurance_scores(0)
-    compare_day_scores = Data.get_endurance_scores(days_ago)
-
-    print 'Num types', compare_day_scores.num_types(), today_scores.num_types()
-    print 'Total time', compare_day_scores.total_seconds(), today_scores.total_seconds()
-
-    today_by_exercise = today_scores.by_exercise()
-    compare_day_by_exercise = compare_day_scores.by_exercise()
-
-    all_exercises = list(set(today_by_exercise) | set(compare_day_by_exercise))
-    all_exercises.sort(
-        key=lambda x: (compare_day_by_exercise[x]["total"] if x in today_by_exercise else 0) - (today_by_exercise[x]["total"] if x in today_by_exercise else 0)
-    )
-
-    for exercise in all_exercises:
-        today_duration = today_by_exercise[exercise]["total_seconds"] if exercise in today_by_exercise else 0.0
-        compare_day_duration = compare_day_by_exercise[exercise]["total_seconds"] if exercise in compare_day_by_exercise else 0.0
-
-        compare_day_scores = compare_day_by_exercise[exercise]['values'] if exercise in compare_day_by_exercise else []
-        today_scores = today_by_exercise[exercise]['values'] if exercise in today_by_exercise else []
-
-        print exercise
-        print '    Total {:.1f} {:.1f}'.format(compare_day_duration, today_duration)
-        print '    Best {:.1f} {:.1f}'.format(max(compare_day_scores) if compare_day_scores else 0, max(today_scores) if today_scores else 0)
-        print '    Comparison scores', ' '.join('{:.1f}'.format(x) for x in compare_day_scores)
-        print '    Today scores', ' '.join('{:.1f}'.format(x) for x in today_scores)
-        print ''
 
 
 def start_sprint(duration):
