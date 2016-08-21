@@ -110,6 +110,18 @@ class Data(object):
             data['versus.rep.ignore.date'] = [today.year, today.month, today.day]
 
     @staticmethod
+    def get_current_notes():
+        with with_data(DATA_FILE) as data:
+            return data.get('notes', [''])[-1]
+
+    @staticmethod
+    def set_current_notes(notes):
+        with with_data(DATA_FILE) as data:
+            notes_store = data.setdefault('notes', list())
+            notes_store.append(notes)
+            print 'Setting notes', notes_store
+
+    @staticmethod
     def get_exercise_counts(days_ago):
         data = json.loads(COUNTER.get().run([
             'summary',

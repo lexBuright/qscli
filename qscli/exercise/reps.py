@@ -46,7 +46,7 @@ def run(args):
         record_rep()
     elif args.rep_action == 'versus':
         days_ago = args.days_ago if args.days_ago is not None else Data.get_versus_days_ago()
-        show_rep_comparison(days_ago)
+        versus(days_ago)
     elif args.rep_action == 'set-score':
         # Perhaps this could all be done
         #    better with a single configuration file edited hand
@@ -120,7 +120,7 @@ def calculate_points(days_ago):
 
 Points = collections.namedtuple('Points', 'total uncounted unscored_exercises')
 
-def show_rep_comparison(days_ago):
+def versus(days_ago):
     to_ignore = Data.get_to_ignore()
     today_points = calculate_points(0)
     old_points = calculate_points(days_ago)

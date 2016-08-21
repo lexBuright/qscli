@@ -6,8 +6,11 @@ import argparse
 import decimal
 import json
 import logging
+import os
 import random
+import subprocess
 import sys
+import tempfile
 import unittest
 
 from . import const, endurance, guiutils, reps, walk_args
@@ -52,9 +55,63 @@ def main():
     elif args.action == 'random-suggestion':
         random_suggestion()
     elif args.action == 'report':
-        show_report(args.name)
+        name = args.name if not args.prompt_for_name else const.PROMPT
+        show_report(name)
+    elif args.action == 'edit-notes':
+        edit_notes(args.editor)
     else:
         raise ValueError(args.action)
+
+def run(command, stdin=None, shell=False):
+    stdin = subprocess.PIPE if stdin is not None else None
+
+    process = subprocess.Popen(command, shell=shell)
+    result, _ = process.communicate(stdin)
+    if process.returncode != 0:
+        raise ProgramFailed(command, process.returncode)
+    return result
+
+class ProgramFailed(Exception):
+    def __init__(self, command, returncode):
+        Exception.__init__(self)
+        self.command = command
+        self.returncode = returncode
+
+    def __str__(self):
+        return '{!r} returned non-zero return code {!r}'.format(self.command, self.returncode)
+
+def get_default_editors():
+    return [os.environ.get('VISUAL'), os.environ.get('EDITOR'), 'sensible-editor', 'vim', 'vi', 'nano', 'ed']
+
+def edit_notes(editor):
+    with tempfile.NamedTemporaryFile(delete=False) as stream:
+        old_notes = Data.get_current_notes() or ''
+        stream.write(old_notes)
+
+    with open(stream.name) as edited_stream:
+        print edited_stream.read()
+
+    editors = [editor] if editor is not None else get_default_editors()
+    for editor in editors:
+        if editor is None:
+            continue
+        try:
+            print [editor, stream.name]
+            run([editor, stream.name])
+        except ProgramFailed as e:
+            if e.returncode == 127:
+                continue
+            else:
+                raise
+        else:
+            with open(stream.name) as edited_stream:
+                Data.set_current_notes(edited_stream.read())
+                break
+    else:
+        raise Exception('Could not find a working editor (maybe set EDITOR)')
+
+def show_notes():
+    return Data.get_current_notes()
 
 def random_suggestion():
     endurance_exercises = Data.get_endurance_exercises()
@@ -95,6 +152,8 @@ def build_parser():
 
     sub.add_parser('test')
 
+    edit = sub.add_parser('edit-notes')
+    edit.add_argument('--editor', type=str, help='Do not use the default editor')
 
     versus = sub.add_parser('versus')
     versus.add_argument(
@@ -205,8 +264,9 @@ class TrackTest(unittest.TestCase):
 REPORTS = {
     #('Walking', lambda: walk_args.versus(days_ago)),
     'summary': ('Summary', lambda: versus_summary(Data.get_versus_days_ago())),
-    'reps': ('Reps comparison', lambda: reps.current_versus(Data.get_versus_days_ago())),
-    'records': ('New records set today', new_records )
+    'reps': ('Reps comparison', lambda: reps.versus(Data.get_versus_days_ago())),
+    'records': ('New records set today', new_records),
+    'notes': ('Notes', show_notes)
     # 'distance': ('Distance walked', walk_args.distance_summary),
     # Too slow - getting qswatch to give us a sparse histogram would probably make this faster
 }
