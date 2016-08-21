@@ -135,7 +135,7 @@ def build_parser():
 
     report = sub.add_parser('report')
     report.add_argument('name', nargs='?', help='Which report to show', choices=list(REPORTS))
-    
+    report.add_argument('--prompt-for-name', action='store_true', help='Prompt for the name with a gui')
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
@@ -224,7 +224,9 @@ def new_records():
     return '\n'.join(output)
 
 def show_report(name=None):
-    days_ago = Data.get_versus_days_ago()
+    if name == const.PROMPT:
+        name = guiutils.combo_prompt('report', list(REPORTS))
+
     if name is None:
         name = random.choice(list(REPORTS))
 
