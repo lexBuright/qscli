@@ -30,9 +30,6 @@ import json
 import logging
 import os
 
-from . import config
-
-
 LOGGER = logging.getLogger(__name__)
 
 class Watch(object):
@@ -71,17 +68,23 @@ class Watch(object):
             else:
                 return False
 
-    def clocks(self, quiet):
+    def clocks(self, quiet, is_running):
         with self.with_data() as data:
             for clock_name in sorted(data['clocks'].keys()):
                 LOGGER.debug('Considering clock %r', clock_name)
+
                 clock_data = data['clocks'][clock_name]
-                running_flag = '*' if clock_data.get('running', False) else ''
+
+                if is_running is not None:
+                    if is_running != clock_data['running']:
+                        continue
+
+                running_flag = '*' if clock_data['running'] else ''
                 clock_duration = (clock_data['stop'] or self.time_mod.time()) - clock_data['start']
                 if quiet:
                     yield '{}\n'.format(clock_name)
                 else:
-                    yield '{}{} {}\n'.format(running_flag, clock_name, clock_duration)
+                    yield '{}{} {:.2f}\n'.format(running_flag, clock_name, clock_duration)
 
     def start(self, clock_name, next_label=None):
         with self.with_data() as data:
