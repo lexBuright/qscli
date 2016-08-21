@@ -4,6 +4,7 @@ import decimal
 import json
 import logging
 import subprocess
+import time
 
 from .histogram import Histogram
 from .watch import Watch
@@ -113,11 +114,35 @@ def reset_settings():
     watch.run(['split', 'walking.incline', '-n', INCLINES[0]])
     watch.shutdown()
 
-def get_distance(clock='walking.speed', start=None, end=None):
+def get_distance(clocks=None, start=None, end=None):
     "Distance walked in kilometers per hour"
+
+    if clocks is None:
+        if start is not None:
+            clocks = _get_clocks_for_period(start, end)
+        else:
+            clocks = ['walking.speed']
+
     import numpy # numpy takes 3-4 milliseconds to import
-    data = load_play(clock, start=start, end=end)
-    return sum(numpy.diff(data[:, 0]) * map(float, data[1:, 1])) / 3600
+    result = 0.0
+    for clock in clocks:
+        data = load_play(clock, start=start, end=end)
+        if data:
+            result += sum(numpy.diff(data[:, 0]) * map(float, data[1:, 1])) / 3600
+    return result
+
+def datetime_to_timestamp(dt):
+    return time.mktime(dt.timetuple()) + dt.microsecond
+
+def get_day_distance(days_ago):
+    times_at_speed = get_speed_histogram_for_day(
+        (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
+    return histogram_to_distance(times_at_speed)
+
+def histogram_to_distance(hist):
+    return sum(
+        float(speed) * time_at_speed / 3600
+        for (speed, time_at_speed) in hist.counts.items())
 
 def show():
     watch = Watch()
@@ -146,6 +171,16 @@ def stop():
     watch.run(['delete', 'walking.speed'])
     watch.run(['delete', 'walking.incline'])
     print 'Done walking'
+
+def _get_clocks_for_period(start, end):
+    today = datetime.datetime.now().date()
+    end_day = end.date() if end else today
+    date = start.date()
+    clocks = set()
+    while date <= end_day:
+        clocks |= set(_get_clocks_for_day(date))
+        date += datetime.timedelta(days=1)
+    return clocks
 
 def _get_clocks_for_day(seek_day):
     today = datetime.datetime.now().date()
@@ -189,8 +224,8 @@ def get_time_at_speed(clock='walking.speed'):
 
 def load_play(clock, start=None, end=None):
     import numpy # numpy takes 3-4 milliseconds to import
-    start_string = '--after {} '.format(start) if start else ''
-    end_string = '--before {} '.format(end) if start else ''
+    start_string = '--after {} '.format(datetime_to_timestamp(start)) if start else ''
+    end_string = '--before {} '.format(datetime_to_timestamp(end)) if end else ''
     data_string = bt('qswatch play {} --no-wait --absolute {} {}'.format(clock, start_string, end_string))
     data = numpy.array([
         (float(line.split()[0]), decimal.Decimal(line.split()[1]))

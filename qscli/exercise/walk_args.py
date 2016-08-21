@@ -1,6 +1,7 @@
 import datetime
 import decimal
 import json
+import time
 
 from . import parsers, walking
 from .data import Data
@@ -55,35 +56,29 @@ def run(args):
         print 'Speed and incline set to their minimum'
     elif args.walking_action == 'versus':
         days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
-
-        print 'Today versus {} days ago'.format(days_ago)
-        time_at_speed1 = walking.get_speed_histogram_for_day(
-            datetime.date.today())
-        time_at_speed2 = walking.get_speed_histogram_for_day(
-            (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
-        versus_clocks(time_at_speed1, time_at_speed2)
+        versus(days_ago)
     elif args.walking_action == 'start-sprint':
         start_sprint('free')
     elif args.walking_action == 'stop-sprint':
         stop_sprint('free')
     elif args.walking_action == 'record-sprint':
-        duration = args.duration
-        display_period = 30
-        start = time.time()
-        start_sprint(duration)
-        end = start + duration
-        while time.time() < end:
-            time.sleep(min(end - time.time(), display_period))
-            print time.time() - start
-        stop_sprint(duration)
+        record_sprint(args.duration)
     else:
         raise ValueError(args.walking_action)
 
+def versus(days_ago):
+    print 'Today versus {} days ago'.format(days_ago)
+    time_at_speed1 = walking.get_speed_histogram_for_day(
+        datetime.date.today())
+
+    time_at_speed2 = walking.get_speed_histogram_for_day(
+        (datetime.datetime.now() - datetime.timedelta(days=days_ago)).date())
+
+    versus_clocks(time_at_speed1, time_at_speed2)
+
 def aggregates_for_speeds(time_at_speeds):
     total_time = time_at_speeds.total()
-    distance = sum(
-        speed * time_at_speed / 3600
-        for (speed, time_at_speed) in time_at_speeds.counts())
+    distance = walking.histogram_to_distance(time_at_speeds)
     quartiles = time_at_speeds.values_at_quantiles([0.0, 0.25, 0.5, 0.75, 1.0])
     speed = distance / total_time * 1000.0
     print '{:.2f}km'.format(distance)
@@ -147,3 +142,19 @@ def stop_sprint(duration):
         distance = walking.get_distance(start=data['start'], end=data['stop'])
         watch.run(['store', 'walking.sprint.{}'.format(duration), str(distance)])
         print watch.run(['summary', 'walking.sprint.{}'.format(duration)])
+
+def record_sprint(duration):
+    display_period = 30
+    start = time.time()
+    start_sprint(duration)
+    end = start + duration
+    while time.time() < end:
+        time.sleep(min(end - time.time(), display_period))
+        print time.time() - start
+    stop_sprint(duration)
+
+def distance_summary():
+    today_distance = walking.get_day_distance(0)
+    hour_distance = walking.get_distance(start=datetime.datetime.utcnow() - datetime.timedelta(seconds=3600))
+    ten_distance = walking.get_distance(start=datetime.datetime.utcnow() - datetime.timedelta(seconds=600))
+    return 'Today {:.2f} km\nHour: {:.2f}\nTen minutes: {:.2f}'.format(today_distance, hour_distance, ten_distance)
