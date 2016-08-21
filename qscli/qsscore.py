@@ -38,15 +38,27 @@ store_command.add_argument('value', type=float)
 
 parsers.add_parser('daemon', help='Run a daemon')
 
+def regexp_option(parser):
+    parser.add_argument('--regex', '-x', type=re.compile, help='Only return entries whose metric name match this regexp')
+
+def days_ago_option(parser):
+    parser.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+
 log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
-log_command.add_argument('--regex', '-x', type=re.compile, help='Only return scores whose names match this regexp')
-log_command.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
-log_command.add_argument('--json', action='store_true', help='Output results in machine readable json')
+regexp_option(log_command)
+days_ago_option(log_command)
+
+log_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
 
 update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
 update_command.add_argument('metric', type=str)
 update_command.add_argument('value', type=float)
 update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
+
+records_command = parsers.add_parser('records', help='Display when records were obtained')
+records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+days_ago_option(records_command)
+regexp_option(records_command)
 
 delete_command = parsers.add_parser('delete', help='Delete a metric')
 delete_command.add_argument('metric', type=str)
@@ -195,6 +207,12 @@ def run(options, stdin):
         elif options.command == 'restore':
             restore(data, stdin.read())
             return ''
+        elif options.command == 'records':
+            if options.days_ago is not None:
+                start, end = days_ago_bounds(options.days_ago)
+            else:
+                start = end = None
+            return records(data, options.json, options.regex, start=start, end=end)
 
         metric_data = get_metric_data(data, options.metric)
         if options.command == 'store':
@@ -380,6 +398,40 @@ def log(data, json_output, name_regexp, start_time, end_time):
         for entry in entries:
             output.append('{} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry['value']))
         return '\n'.join(output)
+
+def records(data, json_output, regex, start=None, end=None):
+    result = {}
+    for metric_name, metric in data['metrics'].items():
+        if regex is not None:
+            if not regex.search(metric_name):
+                continue
+
+        sort_key = lambda v: (v['value'], -v['time'])
+        record_entry = max(metric['values'], key=sort_key)
+        previous_entries = list(v for v in metric['values'] if v['time'] < record_entry['time'])
+        beaten_entry = max(previous_entries, key=sort_key) if previous_entries else None
+
+        if start and record_entry['time'] < start:
+            continue
+
+        if end and record_entry['time'] >= end:
+            continue
+
+        if beaten_entry:
+            improvement = record_entry['value'] - beaten_entry['value']
+        else:
+            improvement = None
+        
+        result[metric_name] = dict(value=record_entry['value'], time=record_entry['time'], improvement=improvement)
+
+    if not json_output:
+        output = []
+        for key in sorted(result.keys()):
+            output.append('{} {} {} {}'.format(key, result[key]['value'], improvement, datetime.datetime.fromtimestamp(result[key]['time']).isoformat()))
+        return '\n'.join(output)
+    else:
+        return json.dumps(dict(records=result))
+    
 
 
 class TestCli(unittest.TestCase):
