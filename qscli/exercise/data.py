@@ -147,6 +147,15 @@ class Data(object):
         with with_data(DATA_FILE) as data:
             data['versus_days'] = data.get('versus_days', 1) + incr
 
+    @staticmethod
+    def get_last_report():
+        with with_data(DATA_FILE) as data:
+            return data.get('last_report', None)
+
+    @staticmethod
+    def set_last_report(name):
+        with with_data(DATA_FILE) as data:
+            data['last_report'] = name
 
 
 def dict_replace(dict_, **kwargs):

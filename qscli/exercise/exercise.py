@@ -56,7 +56,10 @@ def main():
         random_suggestion()
     elif args.action == 'report':
         name = args.name if not args.prompt_for_name else const.PROMPT
+        name = name if not args.last else const.LAST
         show_report(name)
+    elif args.action == 'last-report':
+        print Data.get_last_report()
     elif args.action == 'edit-notes':
         edit_notes(args.editor)
     else:
@@ -136,6 +139,9 @@ def build_parser():
     report = sub.add_parser('report')
     report.add_argument('name', nargs='?', help='Which report to show', choices=list(REPORTS))
     report.add_argument('--prompt-for-name', action='store_true', help='Prompt for the name with a gui')
+    report.add_argument('--last', action='store_true', help='Redisplay the last displayed report')
+
+    sub.add_parser('last-report')
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
@@ -226,11 +232,14 @@ def new_records():
 def show_report(name=None):
     if name == const.PROMPT:
         name = guiutils.combo_prompt('report', list(REPORTS))
+    if name == const.LAST:
+        name = Data.get_last_report()
 
     if name is None:
         name = random.choice(list(REPORTS))
 
     heading, func = REPORTS[name]
+    Data.set_last_report(name)
     print heading
     print func()
 
