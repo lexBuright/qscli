@@ -4,16 +4,14 @@
 
 import argparse
 import decimal
+import json
 import logging
 import random
-import subprocess
 import sys
 import unittest
 
-from .data import Data, SCORER
-from . import reps, endurance, walk_args
-from . import guiutils
-from . import const
+from . import const, endurance, guiutils, reps, walk_args
+from .data import SCORER, Data
 from .histogram import Histogram
 
 LOGGER = logging.getLogger()
@@ -45,7 +43,6 @@ def main():
         endurance.run(args)
     elif args.action == 'walking':
         walk_args.run(args)
-
     elif args.action == 'versus':
         days_ago = args.days if args.days is not None else Data.get_versus_days_ago()
         versus_summary(days_ago)
@@ -54,6 +51,8 @@ def main():
         unittest.main()
     elif args.action == 'random-suggestion':
         random_suggestion()
+    elif args.action == 'report':
+        show_report(args.name)
     else:
         raise ValueError(args.action)
 
@@ -77,7 +76,9 @@ def build_parser():
 
     sub.add_parser('random-suggestion')
 
-    sub.add_parser('random-report')
+    report = sub.add_parser('report')
+    report.add_argument('name', nargs='?', help='Which report to show', choices=list(REPORTS))
+    
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
@@ -105,22 +106,6 @@ def build_parser():
     return parser
 
 
-# UTILITY FUNCTIONS
-
-def backticks(command, stdin=None):
-    if stdin:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-    else:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE)
-
-    result, _ = process.communicate(stdin)
-    LOGGER.debug('Running %r (%r)', command, ' '.join(command))
-    if process.returncode != 0:
-        raise Exception(
-            '{!r} returned non-zero return code {!r}'.format(
-                command,
-                process.returncode))
-    return result
 
 def versus_summary(days_ago):
     print 'Todays versus {} days ago'.format(days_ago)
@@ -166,7 +151,27 @@ def record_score(exercise_name, score):
     SCORER.get().run(['store', store_name, str(score)])
     print SCORER.get().run(['summary', store_name, '--update'])
 
+def new_records():
+    data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise-score.']))
+    output = []
 
+    for name, record in data['records'].items():
+        output.append('{} {:.2f} +{:.2f}'.format(name.split('.', 1)[1], record['value'], record['improvement'] or 0))
+
+    data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise.endurance']))
+    for name, record in data['records'].items():
+        output.append('{} {:.2f} +{:.2f}'.format(name.split('.', 1)[1], record['value'], record['improvement'] or 0))
+
+    return '\n'.join(output)
+
+def show_report(name=None):
+    days_ago = Data.get_versus_days_ago()
+    if name is None:
+        name = random.choice(list(REPORTS))
+
+    heading, func = REPORTS[name]
+    print heading
+    print func()
 
 class TrackTest(unittest.TestCase):
     def test_count_to_quantiles(self):
@@ -196,3 +201,12 @@ class TrackTest(unittest.TestCase):
         hist1 = Histogram({1:10, 2:5, 4:5, 7:1})
         hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
         self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
+
+REPORTS = {
+    #('Walking', lambda: walk_args.versus(days_ago)),
+    'summary': ('Summary', lambda: versus_summary(Data.get_versus_days_ago())),
+    'reps': ('Reps comparison', lambda: reps.current_versus(Data.get_versus_days_ago())),
+    'records': ('New records set today', new_records )
+    # 'distance': ('Distance walked', walk_args.distance_summary),
+    # Too slow - getting qswatch to give us a sparse histogram would probably make this faster
+}
