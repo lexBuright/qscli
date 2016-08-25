@@ -204,8 +204,47 @@ class Watch(object):
             else:
                 raise NoMoreData()
 
-    def show(self, clock_name, json_output):
+    def show(self, clock_name, json_output, is_interactive):
         LOGGER.debug('Showing %r', clock_name)
+
+        if json_output and is_interactive:
+            raise Exception('Cannot have both json output and interactive output')
+
+        if is_interactive:
+            yield '\n'
+            while True:
+                self.time_mod.sleep(0.1)
+                yield '\r'
+                yield self.show_raw(clock_name, json_output).strip()
+        else:
+            yield self.show_raw(clock_name, json_output)
+
+    def show_split(self, clock_name, is_interactive):
+        if is_interactive:
+            old_name = None
+            while True:
+                self.time_mod.sleep(0.1)
+
+                with self.with_clock_data(clock_name) as data:
+                    new_name = data['splits'][-1]['name']
+                    if new_name != old_name and old_name is not None:
+                        yield '\n'
+                    old_name = new_name
+
+                    yielded = self.show_split_raw(data, clock_name).strip('\n')
+                    # HACK - we should probably use blessings
+                    yield '\r                                                  \r'
+                    yield yielded
+        else:
+            with self.with_clock_data(clock_name) as data:
+                yield self.show_split_raw(data, clock_name)
+
+    def show_split_raw(self, data, clock_name):
+            name = data['splits'][-1]['name']
+            start = data['splits'][-1]['start']
+            return '{} {:.2f}\n'.format(name, self.time_mod.time() - start)
+
+    def show_raw(self, clock_name, json_output):
         with self.with_clock_data(clock_name) as clock_data:
             if not clock_data:
                 return ''
@@ -215,7 +254,7 @@ class Watch(object):
                 clock_data['splits'][0]['name'] != None or
                 clock_data['splits'][0]['data'] != None)
             if split_display:
-                return self.split_show(clock_data, json_output)
+                return self.splits_show(clock_data, json_output)
             else:
                 return self.simple_show(clock_data, json_output)
 
@@ -234,7 +273,7 @@ class Watch(object):
         else:
             return self.format_float(duration)
 
-    def split_show(self, data, json_output):
+    def splits_show(self, data, json_output):
         if 'splits' not in data:
             data['splits'] = backend.new_list()
 

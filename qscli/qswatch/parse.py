@@ -18,7 +18,6 @@ LOGGER = logging.getLogger()
 
 def run(data_dir, time_mod, stdout, args):
     args = args or ['toggle']
-
     options = PARSER.parse_args(args)
 
     if options.debug:
@@ -53,6 +52,7 @@ def watch_run(watch, options):
             return watch.stop(options.clock)
         else:
             return watch.start(options.clock)
+
     elif options.command == 'clocks':
         return watch.clocks(options.quiet, options.running)
     elif options.command == 'start':
@@ -64,7 +64,9 @@ def watch_run(watch, options):
     elif options.command == 'export-all':
         return watch.export_all()
     elif options.command == 'show':
-        return watch.show(options.clock, options.json)
+        return watch.show(options.clock, options.json, options.interactive)
+    elif options.command == 'show-split':
+        return watch.show_split(options.clock, options.interactive)
     elif options.command == 'split':
         return watch.split(options.clock, options.label, options.next_label)
     elif options.command == 'label-split':
@@ -116,6 +118,11 @@ def build_parser():
     show = parsers.add_parser('show', help='Show the current elapsed time')
     show.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
     show.add_argument('--json', action='store_true', help='Output in json format')
+    show.add_argument('--interactive', action='store_true', help='Block and interactive change display')
+
+    show_split = parsers.add_parser('show-split', help='Show the current elapsed time')
+    show_split.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
+    show_split.add_argument('--interactive', action='store_true', help='Block and interactively change display')
 
     stop = parsers.add_parser('stop', help='Stop the current elapsed time')
     stop.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
