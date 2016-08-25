@@ -219,14 +219,16 @@ def record_score(exercise_name, score):
 def new_records():
     data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise-score.']))
     output = []
-
     for name, record in data['records'].items():
         output.append('{} {:.2f} +{:.2f}'.format(name.split('.', 1)[1], record['value'], record['improvement'] or 0))
+    improved_rep = len([d for d in data['records'].values() if d['improvement'] is not None])
 
     data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise.endurance']))
     for name, record in data['records'].items():
         output.append('{} {:.2f} +{:.2f}'.format(name.split('.', 1)[1], record['value'], record['improvement'] or 0))
+    improved_endurance = len([d for d in data['records'].values() if d['improvement'] is not None])
 
+    output.insert(0, '{} improved records\n'.format(improved_rep + improved_endurance))
     return '\n'.join(output)
 
 def show_report(name=None):
