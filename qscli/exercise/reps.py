@@ -125,8 +125,10 @@ def versus(days_ago):
     today_points = calculate_points(0)
     old_points = calculate_points(days_ago)
 
-    print SCORER.get().run(['summary', 'exercise-score.daily-points', '--update'])
     print 'Points:', old_points.total, today_points.total
+    print '\n'
+    print SCORER.get().run(['summary', 'exercise-score.daily-points', '--update'])
+    print '\n'
 
     if today_points.uncounted + old_points.uncounted:
         print 'Uncounted:', today_points.uncounted + old_points.uncounted
