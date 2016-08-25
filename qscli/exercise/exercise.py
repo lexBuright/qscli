@@ -3,6 +3,8 @@
 # This is to be classified as useful glue code
 
 import argparse
+import collections
+import datetime
 import decimal
 import json
 import logging
@@ -245,6 +247,27 @@ def show_report(name=None):
     print heading
     print func()
 
+def records_timeseries():
+    length = 20
+    data = json.loads(SCORER.get().run(['records', '--json', '--regex', '^exercise-score.']))
+    today = datetime.date.today()
+    records_by_days_ago = collections.Counter()
+    for _, record  in data['records'].items():
+        days_ago = (today - datetime.datetime.fromtimestamp(record['time']).date()).days
+        if days_ago > length:
+            continue
+        else:
+            records_by_days_ago[days_ago] += 1
+
+    return ' '.join(map(str, (records_by_days_ago[i] for i in range(length))))
+
+def points_timeseries():
+    length = 20
+    return ' '.join(["{:.0f}".format(calculate_points(i).total) for i in range(length)])
+
+def calculate_points(days_ago):
+    return reps.calculate_points(days_ago)
+
 class TrackTest(unittest.TestCase):
     def test_count_to_quantiles(self):
         hist = Histogram({0:20, 20:20, 40:20, 60:20, 80:20})
@@ -279,6 +302,8 @@ REPORTS = {
     'summary': ('Summary', lambda: versus_summary(Data.get_versus_days_ago())),
     'reps': ('Reps comparison', lambda: reps.versus(Data.get_versus_days_ago())),
     'records': ('New records set today', new_records),
+    'records-history': ('Records per day', records_timeseries),
+    'points-history': ('Points per day', points_timeseries),
     'notes': ('Notes', show_notes)
     # 'distance': ('Distance walked', walk_args.distance_summary),
     # Too slow - getting qswatch to give us a sparse histogram would probably make this faster
