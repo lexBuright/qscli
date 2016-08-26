@@ -9,6 +9,7 @@ database of ELK (elasticsearch logstash kibana) if you are being serious.
 import argparse
 import contextlib
 import copy
+import csv
 import datetime
 import itertools
 import json
@@ -19,7 +20,8 @@ import sys
 import tempfile
 import time
 import unittest
-from io import StringIO
+
+from StringIO import StringIO
 
 import fasteners
 
@@ -35,6 +37,9 @@ parsers = PARSER.add_subparsers(dest='command')
 store_command = parsers.add_parser('store', help='Store a score')
 store_command.add_argument('metric', type=str)
 store_command.add_argument('value', type=float)
+
+store_csv_command = parsers.add_parser('store-csv', help='Read a csv of id-value pairs and store/update them')
+store_csv_command.add_argument('metric', type=str)
 
 parsers.add_parser('daemon', help='Run a daemon')
 
@@ -71,7 +76,7 @@ backup_command = parsers.add_parser('backup', help='Dump out all data to standar
 
 restore_command = parsers.add_parser('restore', help='Dump out all data to standard out')
 
-def metric_command(parsers, name):
+def metric_command(parsers, name, help=''):
     command = parsers.add_parser(name, help='')
     command.add_argument('metric', type=str)
     return command
@@ -80,8 +85,9 @@ metric_command(parsers, 'best')
 metric_command(parsers, 'mean')
 metric_command(parsers, 'run-length')
 
-summary_parser = metric_command(parsers, 'summary')
+summary_parser = metric_command(parsers, 'summary', help='Summarise a result (defaults to the last value)')
 summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
+summary_parser.add_argument('--id', type=str, help='Show summary for the result with this id')
 
 parsers.add_parser('list', help='List the things that we have scores for')
 
@@ -217,6 +223,8 @@ def run(options, stdin):
         metric_data = get_metric_data(data, options.metric)
         if options.command == 'store':
             return store(metric_data, options.value)
+        elif options.command == 'store-csv':
+            return store_csv(metric_data, stdin.read())
         elif options.command == 'update':
             return update(metric_data, options.value, options.id)
         elif options.command == 'best':
@@ -247,6 +255,12 @@ def store(metric_data, value):
     metric_values.append(dict(time=time.time(), value=value))
     return ''
 
+def store_csv(metric_data, csv_string):
+    entries = list(csv.reader(StringIO(csv_string)))
+    for ident, value in entries:
+        update(metric_data, float(value), ident)
+    return ''
+
 def update(metric_data, value, ident):
     metric_values = metric_data.setdefault('values', [])
     entry = dict(time=time.time(), value=value)
@@ -268,9 +282,9 @@ def update(metric_data, value, ident):
 
     return ''
 
-def rank(metric_data):
+def rank(metric_data, ident=None):
     result = 0
-    last = get_last(metric_data)
+    last = get_value(metric_data, ident)
     for entry in metric_data['values']:
         if entry['value'] > last:
             result += 1
@@ -297,7 +311,7 @@ def quantile(metric_data):
     if not values:
         return None
 
-    last = get_last(metric_data)
+    last = get_value(metric_data)
     lower = len([x for x in values if x <= last])
     upper = len(values) - len([x for x in values if x > last])
     return float(lower + upper) / 2 / len(values)
@@ -306,25 +320,33 @@ def best_ratio(metric_data):
     if len(metric_data['values']) < 1:
         return None
     else:
-        last = get_last(metric_data)
+        last = get_value(metric_data)
         rest = [x['value'] for x in metric_data['values'][:-1]]
         if not rest or max(rest) == 0:
             return None
         else:
             return last / max(rest)
 
-def get_last(metric_data):
+def get_value(metric_data, ident=None):
     has_ids = any(entry.get('id') for entry in metric_data['values'])
-    if has_ids:
-        return sorted(metric_data['values'], key=lambda x: x.get('id'))[-1]['value']
-    else:
-        return metric_data['values'][-1]['value']
 
-def summary(metric_data, update=False):
-    last = get_last(metric_data)
-    messages = ['{:.2f}'.format(last)]
-    last_rank = rank(metric_data)
-    if last_rank == 0 and len(metric_data['values']) > 1:
+    if has_ids:
+        if ident is None:
+            return sorted(metric_data['values'], key=lambda x: x.get('id'))[-1]['value']
+        else:
+            entry, = [x for x in metric_data['values'] if x.get('id') == ident]
+            return entry['value']
+    else:
+        if ident is not None:
+            raise ValueError(ident)
+        else:
+            return metric_data['values'][-1]['value']
+
+def summary(metric_data, update=False, ident=None):
+    value = get_value(metric_data, ident)
+    messages = ['{:.2f}'.format(value)]
+    value_rank = rank(metric_data, ident=None)
+    if value_rank == 0 and len(metric_data['values']) > 1:
         messages.append('New best')
 
     if len(metric_data['values']) == 1:
@@ -338,7 +360,7 @@ def summary(metric_data, update=False):
             messages.append('Broken run :(')
 
     if len(metric_data['values']) > 1:
-        messages.append('{} best'.format(ordinal(last_rank + 1)))
+        messages.append('{} best'.format(ordinal(value_rank + 1)))
         messages.append('Quantile: {:.2f}'.format(quantile(metric_data)))
         ratio = best_ratio(metric_data)
         if ratio is not None:
@@ -392,11 +414,11 @@ def log(data, json_output, name_regexp, start_time, end_time):
     entries.sort(key=lambda v: v['time'])
 
     if json_output:
-        return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric']) for entry in entries])
+        return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric'], id=entry.get('id')) for entry in entries])
     else:
         output = []
         for entry in entries:
-            output.append('{} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry['value']))
+            output.append('{} {} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry.get('id', '-'), entry['value']))
         return '\n'.join(output)
 
 def records(data, json_output, regex, start=None, end=None):
