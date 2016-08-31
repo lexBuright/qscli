@@ -10,7 +10,7 @@ A collection of low-level and high-level tools to collect, store, and interact w
 # Scope
 
 - This library does not concern itself with graphical tools.
-- Though some tools may carry out a limited amount of analysis, particularly those related gamification (or rather scorification), this is not the aim of this library.
+- Though some tools may carry out a limited amount of analysis, particularly those related to gamification (or rather scorification), this is not the aim of this library.
 
 # Low-level tools
 
@@ -28,7 +28,7 @@ These are tools designed and used for real world tasks. They will tend to be "ba
 
 However, one hopes they will be valuable for: illustrating how low-level tools can be used; identifying other low-level tools that should exist, and how the existing ones should be modified; actually doing real world thigns.
 
-##  `qsexercise` - A tool to keep track of exercise while exercise, and provide feedback.
+##  `qsexercise` - A tool to keep track of exercise while exercising, and provide feedback.
 
 This was designed to be used via `libnotify` and keybindings from your window manager.
 
