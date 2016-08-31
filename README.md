@@ -1,4 +1,4 @@
-# qs_cli - A quantified-self command-line interface
+# qscli - A quantified-self command-line interface
 
 A collection of low-level and high-level tools to collect, store, and interact with information about yourself.
 
