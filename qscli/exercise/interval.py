@@ -254,8 +254,17 @@ def stop():
 
 def stats():
     exercise = Data.get_interval_exercise()
+    speed = Data.get_interval_speed()
+    incline = Data.get_interval_incline()
+    active = Data.get_interval_active()
+    rest = Data.get_interval_rest()
+
     score_name = get_score_name()
     data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
+
+    print 'speed incline active rest'
+    print speed, incline, active, rest
+    print
 
     active_period = Data.get_interval_active()
     rest_period = Data.get_interval_rest()
