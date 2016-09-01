@@ -44,7 +44,8 @@ def main():
         sys.argv = args
         unittest.main(module='qswatch.parse', defaultTest='get_tests')
     else:
-        sys.exit(run(config.DATA_DIR, time, sys.stdout, sys.argv[1:]))
+        run(config.DATA_DIR, time, sys.stdout, sys.argv[1:])
+        LOGGER.debug('Exiting')
 
 def watch_run(watch, options):
     if options.command == 'toggle':

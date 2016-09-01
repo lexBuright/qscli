@@ -269,7 +269,7 @@ class Watch(object):
             duration = clock_data['duration']
 
         if json_output:
-            return backend.json_dumps(dict(duration=duration, start=clock_data['start'], stop=clock_data['stop']))
+            return backend.json_dumps(dict(running=clock_data['running'], duration=duration, start=clock_data['start'], stop=clock_data['stop']))
         else:
             return self.format_float(duration)
 
