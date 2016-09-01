@@ -1,16 +1,17 @@
 import json
 
+from .. import guiutils
+
 from .data import SCORER, Data
 from .watch import Watch
 from . import const
-from . import guiutils
 from . import parsers
 
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='endurance_action')
     set_endurance = sub.add_parser('set')
-    exercise_prompt(set_endurance)
+    parsers.exercise_prompt(set_endurance)
 
     start_endurance = sub.add_parser('start')
     start_endurance.add_argument('--exercise', type=str)
@@ -48,7 +49,7 @@ def endurance_stats():
     SCORER.get().run(['update', 'exercise.endurance.{}'.format(exercise), str(duration)])
     summary = SCORER.get().run(['summary', 'exercise.endurance.{}'.format(exercise)])
     print exercise
-    print summary
+    print summary.encode('utf8')
 
 def set_endurance_exercise(exercise):
     if exercise is None:
@@ -62,7 +63,7 @@ def set_endurance_exercise(exercise):
     Data.set_endurance_exercise(exercise_name)
 
 def start_endurance_exercise(exercise):
-    exercise = Data.get_endurance_exercise(None) or exercise
+    exercise = exercise or Data.get_endurance_exercise(None)
 
     with Watch() as watch:
         watch.run(['start', 'exercise-endurance'])
@@ -84,10 +85,6 @@ def stop_endurance_exercise():
     summary = SCORER.get().run(['summary', 'exercise.endurance.{}'.format(exercise)])
     print exercise
     print summary
-
-def exercise_prompt(parser):
-    parser.add_argument('--exercise', type=str)
-    parser.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
 
 def show_endurance_comparison(days_ago):
     today_scores = Data.get_endurance_scores(0)

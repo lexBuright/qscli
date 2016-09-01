@@ -7,7 +7,7 @@ import time
 
 import fasteners
 
-from . import const, counter, scorer
+from . import const, counter, scorer, watch
 
 DATA_DIR =  os.path.join(os.environ['HOME'], '.config', 'exercise-track')
 if not os.path.isdir(DATA_DIR):
@@ -36,7 +36,7 @@ class Data(object):
 
         exercises = [x.split('.', 1)[1]
             for x in counters if x.startswith('exercise.')]
-        return exercises
+        return sorted(exercises)
 
     @staticmethod
     def set_endurance_exercise(exercise):
@@ -75,6 +75,71 @@ class Data(object):
     @staticmethod
     def get_endurance_exercises():
         return [x.split('.', 2)[2] for x in SCORER.get().run(['list']).splitlines() if x.startswith('exercise.endurance.')]
+
+    @staticmethod
+    def get_interval_exercises():
+        return [x.split('.', 2)[2] for x in SCORER.get().run(['list']).splitlines() if x.startswith('exercise.interval.')]
+
+    @staticmethod
+    def get_interval_exercise():
+        with with_data(DATA_FILE) as data:
+            return data['interval_exercise']
+
+    @staticmethod
+    def get_interval_incline():
+        with with_data(DATA_FILE) as data:
+            return data['interval_incline']
+
+    @staticmethod
+    def get_interval_speed():
+        with with_data(DATA_FILE) as data:
+            return data['interval_speed']
+
+    @staticmethod
+    def set_interval_exercise(exercise):
+        with with_data(DATA_FILE) as data:
+            data['interval_exercise'] = exercise
+
+    @staticmethod
+    def set_interval_frontier_point(value):
+        with with_data(DATA_FILE) as data:
+            data['interval_frontier'] = value
+
+    @staticmethod
+    def get_interval_frontier_point():
+        with with_data(DATA_FILE) as data:
+            return data['interval_frontier']
+
+    @staticmethod
+    def set_interval_incline(incline):
+        with with_data(DATA_FILE) as data:
+            data['interval_incline'] = incline
+
+    @staticmethod
+    def set_interval_speed(speed):
+        with with_data(DATA_FILE) as data:
+            data['interval_speed'] = speed
+
+    @staticmethod
+    def set_interval_active(active):
+        with with_data(DATA_FILE) as data:
+            data['interval_active'] = active
+
+
+    @staticmethod
+    def get_interval_active():
+        with with_data(DATA_FILE) as data:
+            return data['interval_active']
+
+    @staticmethod
+    def set_interval_rest(resting):
+        with with_data(DATA_FILE) as data:
+            data['interval_rest'] = resting
+
+    @staticmethod
+    def get_interval_rest():
+        with with_data(DATA_FILE) as data:
+            return data['interval_rest']
 
     @staticmethod
     def get_endurance_results(days_ago):
@@ -213,3 +278,4 @@ def read_json(filename):
 
 COUNTER = ClientCache(counter.Counter)
 SCORER = ClientCache(scorer.Scorer)
+WATCH = ClientCache(watch.Watch)

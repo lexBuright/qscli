@@ -68,7 +68,7 @@ class CliClient(object):
 
     def run(self, command):
         command_string = ' '.join(map(_escape_whitespaced, command))
-        LOGGER.debug('Sending command %r', command_string)
+        LOGGER.debug('Sending command %r %r', self, command_string)
         self._proc.stdin.write(command_string + '\n')
         self._proc.stdin.flush()
         reply = self._proc.stdout.readline()

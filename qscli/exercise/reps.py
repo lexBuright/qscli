@@ -2,7 +2,9 @@ import collections
 import datetime
 import json
 
-from . import const, guiutils
+from .. import guiutils
+
+from . import const
 from .data import COUNTER, SCORER, Data
 from . import parsers
 
@@ -10,8 +12,7 @@ def add_subparser(parser):
     sub = parser.add_subparsers(dest='rep_action')
 
     set_score_ = sub.add_parser('set-score', help='Set the score for a rep based exercise exercise')
-    set_score_.add_argument('--exercise', type=str)
-    set_score_.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
+    parsers.exercise_prompt(set_score_)
     set_score_.add_argument('--score', type=float)
     set_score_.add_argument('--prompt-for-score', action='store_const', dest='score', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
     set_score_.add_argument('--days-ago', '-A', type=int, help='Only set scores for exercises you did this many days ago')
@@ -30,11 +31,29 @@ def add_subparser(parser):
     note_parser = sub.add_parser('note')
     note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
 
+def get_records():
+    data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise.score.reps.']))
+    return data['records']
+
+def get_record_history(length):
+    data = json.loads(SCORER.get().run(['records', '--json', '--regex', '^exercise.score.reps.']))
+    today = datetime.date.today()
+    records_by_days_ago = collections.Counter()
+    for _, record  in data['records'].items():
+        days_ago = (today - datetime.datetime.fromtimestamp(record['time']).date()).days
+        if days_ago > length:
+            continue
+        else:
+            records_by_days_ago[days_ago] += 1
+    return records_by_days_ago
+
+
+
 def run(args):
     if args.rep_action == 'start':
         # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)
-        exercise_score = 'exercise-score.{}'.format(args.exercise_name)
+        exercise_score = 'exercise.score.reps.{}'.format(args.exercise_name)
 
         Data.set_rep_exercise(exercise_name)
 
@@ -66,7 +85,7 @@ def run(args):
 
 def record_rep():
     exercise_name = Data.get_rep_exercise()
-    exercise_score = 'exercise-score.' + exercise_name.split('.', 1)[1]
+    exercise_score = 'exercise.score.reps.' + exercise_name.split('.', 1)[1]
     versus_days = Data.get_versus_days_ago()
 
     points = calculate_points(0)
@@ -99,7 +118,7 @@ def record_rep():
 
     print 'Rate: {:.2f}'.format(rate)
     SCORER.get().run(['update', exercise_score, str(count)])
-    print SCORER.get().run(['summary', exercise_score, '--update'])
+    print SCORER.get().run(['summary', exercise_score, '--update']).encode('utf8')
 
 def calculate_points(days_ago):
     by_exercise_scores = Data.get_exercise_scores()
@@ -127,7 +146,8 @@ def versus(days_ago):
 
     print 'Points:', old_points.total, today_points.total
     print '\n'
-    print SCORER.get().run(['summary', 'exercise-score.daily-points', '--update'])
+
+    print SCORER.get().run(['summary', 'exercise.score.daily.rep-points', '--update']).encode('utf8')
     print '\n'
 
     if today_points.uncounted + old_points.uncounted:
@@ -175,4 +195,23 @@ def set_score(exercise, days_ago, score):
     Data.set_exercise_score(exercise, score)
 
 def store_points(day, points):
-    SCORER.get().run(['update', '--id', day.isoformat(), 'exercise-score.daily-points', str(points)])
+    SCORER.get().run(['update', '--id', day.isoformat(), 'exercise.score.daily.rep-points', str(points)])
+
+
+def rep_matrix():
+    result = []
+    counter = collections.Counter()
+    data = json.loads(SCORER.get().run(['log', '--since', '10d', '--regex', '^exercise\\.score\\.reps\\.', '--json']))
+    for entry in data:
+        date = datetime.datetime.fromtimestamp(entry['time']).date()
+        exercise = entry['metric'].split('.', 3)[-1]
+        counter[date, exercise] += entry['value']
+
+    result = []
+    today = datetime.date.today()
+    for exercise in Data.get_rep_exercises():
+        counts = [counter[today - datetime.timedelta(days=i), exercise] for i in range(0, 10)]
+        counts_string = ' '.join('{:3.0f}'.format(count) for count in counts)
+        result.append('{:15} {}'.format(exercise[:15], counts_string))
+
+    return '\n'.join(result)
