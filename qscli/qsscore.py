@@ -13,6 +13,7 @@ import csv
 import datetime
 import itertools
 import json
+import logging
 import os
 import re
 import shutil
@@ -20,17 +21,25 @@ import sys
 import tempfile
 import time
 import unittest
-
 from StringIO import StringIO
 
 import fasteners
+import sparklines
 
 import jsdb
+import jsdb.python_copy
 
 from . import ipc
+from .symbol import Symbol
+
+LOGGER = logging.getLogger()
+
+UNKNOWN = Symbol('unknown')
 
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
 PARSER = argparse.ArgumentParser(description=__doc__)
+PARSER.add_argument('--debug', action='store_true', help='Print debug output')
+
 PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
 parsers = PARSER.add_subparsers(dest='command')
 
@@ -49,10 +58,28 @@ def regexp_option(parser):
 def days_ago_option(parser):
     parser.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
 
+UNIT_SIZE = {'h': datetime.timedelta(seconds=3600), 'm': datetime.timedelta(seconds=60), 's': datetime.timedelta(seconds=1), 'd': datetime.timedelta(days=1)}
+
+def fuzzy_date(string):
+    m = re.search(r'^(\d+)([mhsd])$', string)
+    if m:
+        count, unit = m.groups()
+        if unit == 'd':
+            round_now = datetime.datetime.now().replace(hour=0, second=0, microsecond=0)
+        else:
+            round_now = datetime.datetime.now()
+        return round_now - int(count) * UNIT_SIZE[unit]
+    elif re.search(r'^\d\d\d\d-\d\d-\d\d$', string):
+        return datetime.datetime.strptime(string, '%Y-%m-%d').replace(hour=0, second=0, microsecond=0)
+    else:
+        # Ugg, ignore timezones
+        return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%S')
+
 log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
 regexp_option(log_command)
-days_ago_option(log_command)
-
+log_date = log_command.add_mutually_exclusive_group()
+log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+log_date.add_argument('--since', type=fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
 log_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
 
 update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
@@ -73,8 +100,13 @@ move_command.add_argument('old_name', type=str)
 move_command.add_argument('new_name', type=str)
 
 backup_command = parsers.add_parser('backup', help='Dump out all data to standard out')
+restore_command = parsers.add_parser('restore', help='Restore a previous data dump')
 
-restore_command = parsers.add_parser('restore', help='Dump out all data to standard out')
+config_command = parsers.add_parser('config', help='Change the configuration for a series')
+config_command.add_argument('--id-type', type=str, choices=('isodate', 'isohour', 'isominute'), help='Specify the form that ids take so as to fill in gaps. isodata=YYYY-MM-DD, isohour=YYYY-MM-DDTHH:00', dest='ident_type')
+config_command.add_argument('--id-period', type=int, help='How id-type units per reading', dest='ident_period')
+config_command.add_argument('metric', type=str)
+
 
 def metric_command(parsers, name, help=''):
     command = parsers.add_parser(name, help='')
@@ -97,7 +129,10 @@ def main():
         unittest.main()
     else:
         options = PARSER.parse_args(sys.argv[1:])
-        print(str(run(options, sys.stdin)))
+        if options.debug:
+            logging.basicConfig(level=logging.DEBUG)
+
+        print(unicode(run(options, sys.stdin)).encode('utf8'))
 
 def read_json(filename):
     if os.path.exists(filename):
@@ -185,6 +220,7 @@ def run(options, stdin):
         return ipc.run_server(PARSER, lambda more_options: run(more_options, stdin))
 
     data_file = os.path.join(options.config_dir, 'data.jsdb')
+
     with with_data(data_file) as data:
         # new_data = migrate_data(data, DATA_VERSION)
         # data.clear()
@@ -196,6 +232,9 @@ def run(options, stdin):
         elif options.command == 'log':
             if options.days_ago is not None:
                 start_time, end_time = days_ago_bounds(options.days_ago)
+            elif options.since:
+                start_time = dt_to_unix(options.since)
+                end_time = None
             else:
                 start_time = end_time = None
             return log(data, json_output=options.json, name_regexp=options.regex, start_time=start_time, end_time=end_time)
@@ -235,12 +274,27 @@ def run(options, stdin):
             return run_length(metric_data)
         elif options.command == 'summary':
             return summary(metric_data, options.update)
+        elif options.command == 'config':
+            return config(
+                metric_data,
+                options.ident_type,
+                options.ident_period)
         else:
             raise ValueError(options.command)
 
+def config(metric_data, ident_type, ident_period):
+    if ident_type is not None:
+        metric_data['ident_type'] = ident_type
+    if ident_period is not None:
+        metric_data['ident_period'] = ident_period
+    return ''
+
+def dt_to_unix(dt):
+    return time.mktime(dt.timetuple()) + dt.microsecond * 1.0e-6
+
 def days_ago_bounds(days_ago):
     start = datetime.datetime.now().replace(hour=0, second=0, microsecond=0) - datetime.timedelta(days=days_ago)
-    start_time = time.mktime(start.timetuple())
+    start_time = dt_to_unix(start)
     end_time = start_time + 3600 * 24
     return start_time, end_time
 
@@ -258,6 +312,7 @@ def store(metric_data, value):
 def store_csv(metric_data, csv_string):
     entries = list(csv.reader(StringIO(csv_string)))
     for ident, value in entries:
+        LOGGER.debug('Updating %r', ident)
         update(metric_data, float(value), ident)
     return ''
 
@@ -328,19 +383,38 @@ def best_ratio(metric_data):
             return last / max(rest)
 
 def get_value(metric_data, ident=None):
+    return get_last_values(metric_data, 1, ident)[0]
+
+def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_period=1):
+    """If ids_before_func use it to generate a set of ids
+    before the last value (of the one specified by ident
+    """
     has_ids = any(entry.get('id') for entry in metric_data['values'])
 
     if has_ids:
         if ident is None:
-            return sorted(metric_data['values'], key=lambda x: x.get('id'))[-1]['value']
+            id_entries = sorted(metric_data['values'], key=lambda x: x.get('id'))
+            entries = id_entries[-1:-num - 1:-1]
         else:
-            entry, = [x for x in metric_data['values'] if x.get('id') == ident]
-            return entry['value']
+            before_id_entries = sorted([x for x in metric_data['values'] if x.get('id') <= ident], key=lambda x: x.get('id'))
+            entries = before_id_entries[-1:-num - 1:-1]
     else:
         if ident is not None:
             raise ValueError(ident)
         else:
-            return metric_data['values'][-1]['value']
+            entries = metric_data['values'][-1:-num - 1:-1]
+
+    if not has_ids and ids_before_func:
+        raise Exception('Can only use an ids_before_func when we have ids')
+
+    if ids_before_func:
+        idents = ids_before_func(ident or entries[0]['id'], num, ident_period)
+        values_by_id = {e['id']: e['value'] for e in entries}
+        result = [values_by_id.get(ident, 0) for ident in idents]
+        return result
+    else:
+        result = [e['value'] for e in entries]
+        return result
 
 def summary(metric_data, update=False, ident=None):
     value = get_value(metric_data, ident)
@@ -366,7 +440,45 @@ def summary(metric_data, update=False, ident=None):
         if ratio is not None:
             messages.append('Ratio of best: {:.2f}'.format(ratio))
 
-    return '{}'.format('\n'.join(messages))
+    ident_type = metric_data.get('ident_type', None)
+    ident_period = metric_data.get('ident_period', 1)
+
+    ids_before_func = ident_type and IDS_BEFORE_FUNCS[ident_type]
+
+    old = list(get_last_values(metric_data, 10, ident=ident, ids_before_func=ids_before_func, ident_period=ident_period))
+    messages.append(sparklines.sparklines(old)[0])
+
+    return u'{}'.format('\n'.join(messages))
+
+def date_series(end, count, step):
+    date = end
+    for i in range(0, count):
+        yield date
+        date += step
+
+def iso_days_before(end, count, period):
+    end_day = datetime.datetime.strptime(end, '%Y-%m-%d')
+    results = []
+    for day in date_series(end_day, count, datetime.timedelta(days=-period)):
+        results.append(day.strftime('%Y-%m-%d'))
+    return results
+
+def iso_hours_before(end, count, period):
+    end_hour = datetime.datetime.strptime(end, '%Y-%m-%dT%H:%M:%S')
+    results = []
+    for day in date_series(end_hour, count, datetime.timedelta(hours=-period)):
+        results.append(day.strftime('%Y-%m-%dT%H:%M:%S'))
+    return results
+
+def iso_minutes_before(end, count, period):
+    end_hour = datetime.datetime.strptime(end, '%Y-%m-%dT%H:%M:%S')
+    results = []
+    for day in date_series(end_hour, count, datetime.timedelta(seconds=-period * 60)):
+        results.append(day.strftime('%Y-%m-%dT%H:%M:%S'))
+    return results
+
+
+
 
 def ordinal(number):
     return str(number) + {
@@ -383,7 +495,7 @@ def ordinal(number):
     }[str(number)[-1]]
 
 def backup(data):
-    data = copy.deepcopy(data)
+    data = jsdb.python_copy.copy(data)
     data['version'] = DATA_VERSION
     backup_string = json.dumps(data)
     return backup_string
@@ -443,7 +555,7 @@ def records(data, json_output, regex, start=None, end=None):
             improvement = record_entry['value'] - beaten_entry['value']
         else:
             improvement = None
-        
+
         result[metric_name] = dict(value=record_entry['value'], time=record_entry['time'], improvement=improvement)
 
     if not json_output:
@@ -453,8 +565,12 @@ def records(data, json_output, regex, start=None, end=None):
         return '\n'.join(output)
     else:
         return json.dumps(dict(records=result))
-    
 
+IDS_BEFORE_FUNCS = {
+    'isohour': iso_hours_before,
+    'isodate': iso_days_before,
+    'isominute': iso_minutes_before,
+}
 
 class TestCli(unittest.TestCase):
     def cli(self, command, input=''):
@@ -534,6 +650,7 @@ class TestCli(unittest.TestCase):
         lst = self.cli(['list'])
         self.assertTrue('other-metric' in lst)
         self.assertTrue('first-metric' in lst)
+
 
 if __name__ == "__main__":
 	main()
