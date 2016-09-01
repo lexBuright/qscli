@@ -38,7 +38,7 @@ This has features to
 - Keep track of speeds of a treadmill over a period of time, deriving statistics from this curve and comparing it to similar curves- Keep track of endurance exercise (e.g. how long can you run at 13 km/h for) and compare how they change over time
 - Flatten all the exercises you do in a single day down to one number
 
-The key differentiate of this tool compared to similar web- or phone-based equivalents is:
+The key differentiators of this tool compared to similar web- or phone-based equivalents is:
 
 - Easy hackability: hacking on a phone is hard, using a tool on a system that allows programming encourages people to make changse
 - Real-time feedback
