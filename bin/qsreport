@@ -1,0 +1,6 @@
+#!/bin/bash
+here="$(readlink -f $(dirname ${BASH_SOURCE[0]}))"
+PYTHONPATH="$PYTHONPATH:$here/.."
+
+export PYTHONPATH
+python -u -m "qscli.qsreport" "$@"
