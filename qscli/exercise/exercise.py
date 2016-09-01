@@ -13,7 +13,7 @@ import unittest
 
 from .. import guiutils
 
-from . import const, endurance, reps, walk_args, interval
+from . import const, endurance, reps, walk_args, interval, gymtime
 from .. import edit
 from .data import SCORER, Data
 from .histogram import Histogram
@@ -43,6 +43,8 @@ def main():
         record_score(args.exercise, args.score)
     elif args.action == 'reps':
         reps.run(args)
+    elif args.action == 'gymtime':
+        print gymtime.run(args),
     elif args.action == 'endurance':
         endurance.run(args)
     elif args.action == 'walking':
@@ -98,6 +100,8 @@ def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
     parser.add_argument('--debug', action='store_true', help='Print debug output')
     sub = parser.add_subparsers(dest='action')
+
+    gymtime.add_subparser(sub.add_parser('gymtime', help='Record the amount of time at the gym'))
 
     reps.add_subparser(sub.add_parser('reps', help='Actions related to recording reps'))
     endurance.add_subparser(sub.add_parser('endurance', help='Actions related to endurance exercise (do something for as long as possible)'))
@@ -261,6 +265,8 @@ REPORTS = {
     #('Walking', lambda: walk_args.versus(days_ago)),
     'summary': ('Summary', lambda: versus_summary(Data.get_versus_days_ago())),
     'reps': ('Reps comparison', lambda: reps.versus(Data.get_versus_days_ago())),
+    'gymtime': ('Time at gym', gymtime.show),
+    'gymtime-history': ('Time at gym', gymtime.timeseries),
     'records': ('New records set today', new_records),
     'records-history': ('Records per day', records_timeseries),
     'points-history': ('Points per day', points_timeseries),

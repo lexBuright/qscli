@@ -51,7 +51,6 @@ def get_record_history(length):
 
 def run(args):
     if args.rep_action == 'start':
-        # IMPROVEMENT: we might like to bunch up things to do with reps
         exercise_name = 'exercise.{}'.format(args.exercise_name)
         exercise_score = 'exercise.score.reps.{}'.format(args.exercise_name)
 
