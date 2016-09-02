@@ -7,6 +7,7 @@ database of ELK (elasticsearch logstash kibana) if you are being serious.
 """
 
 import argparse
+import collections
 import contextlib
 import copy
 import csv
@@ -76,11 +77,18 @@ def fuzzy_date(string):
         return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%S')
 
 log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
-regexp_option(log_command)
-log_date = log_command.add_mutually_exclusive_group()
-log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
-log_date.add_argument('--since', type=fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
-log_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+def log_command_option(command):
+    regexp_option(command)
+    log_date = command.add_mutually_exclusive_group()
+    log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+    log_date.add_argument('--since', type=fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
+    command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+    command.add_argument('--index', action='append', type=int, help='Only delete these indexes')
+
+log_command_option(log_command)
+
+delete_record_command = parsers.add_parser('delete-record', help='Delete recorded scores (arguments as for log)')
+log_command_option(delete_record_command)
 
 update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
 update_command.add_argument('metric', type=str)
@@ -212,6 +220,23 @@ def down_migrate_data(data):
         del new_data['version']
     return new_data
 
+def log_action(data, options, delete=False):
+    if options.days_ago is not None:
+        start_time, end_time = days_ago_bounds(options.days_ago)
+    elif options.since:
+        start_time = dt_to_unix(options.since)
+        end_time = None
+    else:
+        start_time = end_time = None
+
+    entries = find_entries(data, name_regex=options.regex, start_time=start_time, end_time=end_time, indexes=options.index)
+
+    if delete:
+        delete_entries(data, entries)
+    else:
+        return log_entries(entries, options.json)
+
+
 def run(options, stdin):
     if not os.path.isdir(options.config_dir):
         os.mkdir(options.config_dir)
@@ -225,19 +250,13 @@ def run(options, stdin):
         # new_data = migrate_data(data, DATA_VERSION)
         # data.clear()
         # data.update(**new_data)
-
         if options.command == 'list':
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
         elif options.command == 'log':
-            if options.days_ago is not None:
-                start_time, end_time = days_ago_bounds(options.days_ago)
-            elif options.since:
-                start_time = dt_to_unix(options.since)
-                end_time = None
-            else:
-                start_time = end_time = None
-            return log(data, json_output=options.json, name_regexp=options.regex, start_time=start_time, end_time=end_time)
+            return log_action(data, options)
+        elif options.command == 'delete-record':
+            return log_action(data, options, delete=True)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
@@ -505,26 +524,32 @@ def restore(data, backup):
     backup_data = json.loads(backup)
     data.update(**backup_data)
 
-def log(data, json_output, name_regexp, start_time, end_time):
+def find_entries(data, name_regex, start_time, end_time, indexes):
     entries = []
     for metric_name, metric in data['metrics'].items():
-        if name_regexp is not None and not name_regexp.search(metric_name):
+        if name_regex is not None and not name_regex.search(metric_name):
             continue
 
         values = []
-        for value in jsdb.python_copy.copy(metric['values']):
+        for index, value in enumerate(jsdb.python_copy.copy(metric['values'])):
             if start_time and value['time'] < start_time:
                 continue
             if end_time and value['time'] >= end_time:
                 continue
-
-            values.append(value)
-        for value in values:
             value.update(metric=metric_name)
+            value.update(index=index)
+            values.append(value)
+
         entries.extend(values)
 
     entries.sort(key=lambda v: v['time'])
 
+    if indexes:
+        entries = [e for i, e in enumerate(entries) if i in indexes]
+
+    return entries
+
+def log_entries(entries, json_output):
     if json_output:
         return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric'], id=entry.get('id')) for entry in entries])
     else:
@@ -532,6 +557,15 @@ def log(data, json_output, name_regexp, start_time, end_time):
         for entry in entries:
             output.append('{} {} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry.get('id', '-'), entry['value']))
         return '\n'.join(output)
+
+def delete_entries(data, entries):
+    deleted_by_metric = collections.defaultdict(list)
+    for entry in entries:
+        deleted_by_metric[entry['metric']].append(entry['index'])
+
+    for metric, lst in deleted_by_metric.items():
+        for index in sorted(lst, reverse=True): # unnecessary O(n**2)
+            data['metrics'][metric]['values'].pop(index)
 
 def records(data, json_output, regex, start=None, end=None):
     result = {}
