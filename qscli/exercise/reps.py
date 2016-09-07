@@ -7,6 +7,7 @@ from .. import guiutils
 from . import const
 from .data import COUNTER, SCORER, Data
 from . import parsers
+from . import points
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='rep_action')
@@ -134,9 +135,8 @@ def calculate_points(days_ago):
         else:
             uncounted += count['count']
             unscored_exercises.add(count['name'])
-    return Points(total=total, uncounted=uncounted, unscored_exercises=unscored_exercises)
+    return points.Points(total=total, uncounted=uncounted, unscored_exercises=unscored_exercises)
 
-Points = collections.namedtuple('Points', 'total uncounted unscored_exercises')
 
 def versus(days_ago):
     to_ignore = Data.get_to_ignore()

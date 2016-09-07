@@ -6,6 +6,7 @@ from .data import SCORER, Data
 from .watch import Watch
 from . import const
 from . import parsers
+from . import points
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='endurance_action')
@@ -40,7 +41,7 @@ def run(args):
     elif args.endurance_action == 'stop':
         stop_endurance_exercise()
     elif args.endurance_action == 'points':
-        print str(calculate_points(args.days_ago))
+        print str(calculate_points(args.days_ago).total)
     elif args.endurance_action == 'set-exercise-weight':
         set_weight(args.exercise, args.score)
     elif args.endurance_action == 'versus':
@@ -60,12 +61,19 @@ def set_weight(exercise, score):
     Data.set_endurance_weight(exercise, score)
 
 def calculate_points(days_ago):
-    points = 0
+    uncounted = total = 0
     data = json.loads(SCORER.get().run(['log', '-x', '^exercise.endurance.', '--days-ago', str(days_ago), '--json']))
+    unscored = set()
+
     for entry in data:
         exercise = entry['metric'].split('.', 2)[-1]
-        points += get_weight(exercise) * entry['value']
-    return points
+        weight = get_weight(exercise)
+        if weight == 0:
+            uncounted += 1
+            unscored.add(exercise)
+        total += weight * entry['value']
+
+    return points.Points(total=total, uncounted=uncounted, unscored_exercises=unscored)
 
 def get_weight(exercise):
     return Data.get_endurance_weight(exercise)

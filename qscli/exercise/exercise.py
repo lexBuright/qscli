@@ -17,6 +17,7 @@ from . import const, endurance, reps, walk_args, interval, gymtime
 from .. import edit
 from .data import SCORER, Data
 from .histogram import Histogram
+from . import points
 
 LOGGER = logging.getLogger()
 
@@ -150,10 +151,11 @@ def build_parser():
 def versus_summary(days_ago):
     print 'Todays versus {} days ago'.format(days_ago)
     print ''
+
     today_points = calculate_points(0)
     old_points = calculate_points(days_ago)
 
-    print 'Points:', old_points.total, today_points.total
+    print 'Points: {:.1f} {:.1f}'.format(old_points.total, today_points.total)
 
     if today_points.uncounted + old_points.uncounted:
         print 'Uncounted:', today_points.uncounted + old_points.uncounted
@@ -237,7 +239,12 @@ def points_timeseries():
     return ' '.join(["{:.0f}".format(calculate_points(i).total) for i in range(length)])
 
 def calculate_points(days_ago):
-    return reps.calculate_points(days_ago)
+    endurance_points = endurance.calculate_points(days_ago)
+    rep_points = reps.calculate_points(days_ago)
+    return points.Points(
+        total=endurance_points.total + rep_points.total,
+        uncounted=endurance_points.uncounted + endurance_points.uncounted,
+        unscored_exercises=['endurance.{}'.format(x) for x in endurance_points.unscored_exercises] + ['reps.{}'.format(x) for x in rep_points.unscored_exercises])
 
 class TrackTest(unittest.TestCase):
     def test_count_to_quantiles(self):
@@ -268,6 +275,11 @@ class TrackTest(unittest.TestCase):
         hist2 = Histogram({0:20, 3:10, 5:1, 6:1})
         self.assertEquals(hist1.subtract(hist2).counts, {1:5, 4:3, 7:1})
 
+def show_unscored():
+    days_ago = Data.get_versus_days_ago()
+    today_points = calculate_points(0)
+    old_points = calculate_points(days_ago)
+    return '\n' + '\n'.join(sorted(set(today_points.unscored_exercises) | set(old_points.unscored_exercises)))
 
 REPORTS = {
     #('Walking', lambda: walk_args.versus(days_ago)),
@@ -279,6 +291,7 @@ REPORTS = {
     'records-history': ('Records per day', records_timeseries),
     'points-history': ('Points per day', points_timeseries),
     'notes': ('Notes', show_notes),
+    'unscored': ('Relevant unscored exercises', show_unscored),
     'rep-matrix': ('Rep matrix', reps.rep_matrix)
     # 'distance': ('Distance walked', walk_args.distance_summary),
     # Too slow - getting qswatch to give us a sparse histogram would probably make this faster
