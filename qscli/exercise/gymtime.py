@@ -43,7 +43,7 @@ def leave():
     seconds_at_gym = time_at_gym % 3600
 
     WATCH.get().run(['stop', 'exercise.gymtime'])
-    return 'Left gym: {}h {}s\n{}'.format(hours_at_gym, seconds_at_gym, summary)
+    return u'Left gym: {}h {}s\n{}'.format(hours_at_gym, seconds_at_gym, summary).encode('utf8')
 
 def timeseries():
     update()
