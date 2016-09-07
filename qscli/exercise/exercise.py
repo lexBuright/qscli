@@ -150,8 +150,8 @@ def build_parser():
 def versus_summary(days_ago):
     print 'Todays versus {} days ago'.format(days_ago)
     print ''
-    today_points = reps.calculate_points(0)
-    old_points = reps.calculate_points(days_ago)
+    today_points = calculate_points(0)
+    old_points = calculate_points(days_ago)
 
     print 'Points:', old_points.total, today_points.total
 
