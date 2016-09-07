@@ -65,12 +65,10 @@ class Data(object):
     def get_endurance_weight(exercise):
         with with_data(DATA_FILE) as data:
             weights = data.setdefault('endurance_weights', {})
-            print weights
             return weights.get(exercise, 0)
 
     @staticmethod
     def set_endurance_weight(exercise, score):
-        print 'Setting endurance weight', exercise, score
         with with_data(DATA_FILE) as data:
             weights = data.setdefault('endurance_weights', {})
             weights[exercise] = score
@@ -207,7 +205,6 @@ class Data(object):
         with with_data(DATA_FILE) as data:
             notes_store = data.setdefault('notes', list())
             notes_store.append(notes)
-            print 'Setting notes', notes_store
 
     @staticmethod
     def get_exercise_counts(days_ago):
