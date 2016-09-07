@@ -8,5 +8,6 @@ def days_ago_option(parser):
         nargs='?')
 
 def exercise_prompt(parser):
-    parser.add_argument('--exercise', type=str)
-    parser.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
+    exercise = parser.add_mutually_exclusive_group(required=True)
+    exercise.add_argument('--exercise', type=str)
+    exercise.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')

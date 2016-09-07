@@ -5,9 +5,19 @@ def combo_prompt(prompt, choices):
     p = subprocess.Popen(
         ['rofi', '-dmenu', '-p', prompt],
         stdout=subprocess.PIPE, stdin=subprocess.PIPE)
-    choice_string = '\n'.join(choices)
+
+    if isinstance(choices, dict):
+        if any(' ' in v for v in choices):
+            raise Exception('Choices cannot contain spaces')
+        choice_string = '\n'.join(' '.join([key, str('' if value is None else value)]) for key, value in choices.items())
+    else:
+        choice_string = '\n'.join(choices)
     reply, _ = p.communicate(choice_string)
-    return reply.strip()
+
+    if isinstance(choices, dict):
+        return reply.strip().rsplit(' ', 1)[0]
+    else:
+        return reply.strip()
 
 def _prompt_for_thing(prompt, parse):
     while True:

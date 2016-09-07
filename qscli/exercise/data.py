@@ -62,6 +62,29 @@ class Data(object):
                 return data['endurance_exercise']
 
     @staticmethod
+    def get_endurance_weight(exercise):
+        with with_data(DATA_FILE) as data:
+            weights = data.setdefault('endurance_weights', {})
+            print weights
+            return weights.get(exercise, 0)
+
+    @staticmethod
+    def set_endurance_weight(exercise, score):
+        print 'Setting endurance weight', exercise, score
+        with with_data(DATA_FILE) as data:
+            weights = data.setdefault('endurance_weights', {})
+            weights[exercise] = score
+
+    @staticmethod
+    def get_endurance_weights():
+        with with_data(DATA_FILE) as data:
+            weights = data.setdefault('endurance_weights', {})
+            weights = weights.copy()
+            for exercise in Data.get_endurance_exercises():
+                weights.setdefault(exercise, None)
+            return weights
+
+    @staticmethod
     def get_endurance_scores(days_ago):
         data = json.loads(SCORER.get().run(['log', '--regex', '^exercise\\.endurance\\.', '--days-ago', str(days_ago), '--json']))
         data = [dict(metric=entry['metric'], value=entry['value'], time=entry['time']) for entry in data]

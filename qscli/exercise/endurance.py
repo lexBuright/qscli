@@ -19,10 +19,17 @@ def add_subparser(parser):
     sub.add_parser('stop')
     sub.add_parser('stats')
 
+    points = sub.add_parser('points')
+    points.add_argument('days_ago', default=0, type=int, nargs='?')
+
+    set_weight = sub.add_parser('set-exercise-weight', help='Set the number of points earned per second of exercise')
+    parsers.exercise_prompt(set_weight)
+    score = set_weight.add_mutually_exclusive_group(required=True)
+    score.add_argument('--score', type=float)
+    score.add_argument('--prompt-for-score', action='store_const', const=const.PROMPT, dest='score')
+
     endurance_versus = sub.add_parser('versus')
     parsers.days_ago_option(endurance_versus)
-
-
 
 def run(args):
     if args.endurance_action == 'set':
@@ -33,11 +40,36 @@ def run(args):
         endurance_stats()
     elif args.endurance_action == 'stop':
         stop_endurance_exercise()
+    elif args.endurance_action == 'points':
+        print str(calculate_points(args.days_ago))
+    elif args.endurance_action == 'set-exercise-weight':
+        set_weight(args.exercise, args.score)
     elif args.endurance_action == 'versus':
         days_ago = args.days_ago if args.days_ago is not None else Data.get_versus_days_ago()
         show_endurance_comparison(days_ago)
     else:
         raise ValueError(args.endurance_action)
+
+def set_weight(exercise, score):
+    if exercise == const.PROMPT:
+        weights = Data.get_endurance_weights()
+        exercise = guiutils.combo_prompt('endurance exercise', weights)
+
+    if score == const.PROMPT:
+        score = guiutils.float_prompt('score')
+
+    Data.set_endurance_weight(exercise, score)
+
+def calculate_points(days_ago):
+    points = 0
+    data = json.loads(SCORER.get().run(['log', '-x', '^exercise.endurance.', '--days-ago', str(days_ago), '--json']))
+    for entry in data:
+        exercise = entry['metric'].split('.', 2)[-1]
+        points += get_weight(exercise) * entry['value']
+    return points
+
+def get_weight(exercise):
+    return Data.get_endurance_weight(exercise)
 
 def endurance_stats():
     exercise = Data.get_endurance_exercise()
@@ -56,7 +88,8 @@ def set_endurance_exercise(exercise):
         raise Exception('Must specify an exercise')
 
     if exercise == const.PROMPT:
-        exercise_name = guiutils.combo_prompt('endurance exercise', Data.get_endurance_exercises())
+        weights = Data.get_endurance_weights()
+        exercise_name = guiutils.combo_prompt('endurance exercise', weights)
 
     if exercise_name == '':
         return
