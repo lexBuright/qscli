@@ -7,7 +7,6 @@ from .watch import Watch
 from . import const
 from . import parsers
 
-
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='endurance_action')
     set_endurance = sub.add_parser('set')
