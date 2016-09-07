@@ -60,9 +60,7 @@ def main():
     elif args.action == 'random-suggestion':
         random_suggestion()
     elif args.action == 'report':
-        name = args.name if not args.prompt_for_name else const.PROMPT
-        name = name if not args.last else const.LAST
-        show_report(name, args.forget)
+        show_report(args.name, args.forget)
     elif args.action == 'last-report':
         print Data.get_last_report()
     elif args.action == 'edit-notes':
@@ -111,9 +109,13 @@ def build_parser():
     sub.add_parser('random-suggestion')
 
     report = sub.add_parser('report')
-    report.add_argument('name', nargs='?', help='Which report to show', choices=list(REPORTS))
-    report.add_argument('--prompt-for-name', action='store_true', help='Prompt for the name with a gui')
-    report.add_argument('--last', action='store_true', help='Redisplay the last displayed report')
+    mx = report.add_mutually_exclusive_group()
+    mx.add_argument('--prompt-for-name', action='store_const', help='Prompt for the name with a gui', dest='name', const=const.PROMPT)
+    mx.add_argument('--again', action='store_const', help='Redisplay the last displayed report', dest='name', const=const.LAST)
+    mx.add_argument('--previous', action='store_const', help='Display the report before this one', dest='name', const=const.PREVIOUS)
+    mx.add_argument('--name', type=str, help='Which report to show', choices=list(REPORTS))
+    mx.add_argument('--next', action='store_const', help='Display the report after this one', dest='name', const=const.NEXT)
+
     report.add_argument('--forget', action='store_true', help="Do not remember showing report for history")
 
     sub.add_parser('last-report')
@@ -207,8 +209,14 @@ def new_records():
 def show_report(name=None, forget=False):
     if name == const.PROMPT:
         name = guiutils.combo_prompt('report', list(REPORTS))
-    if name == const.LAST:
+    elif name == const.LAST:
         name = Data.get_last_report()
+    elif name == const.NEXT:
+        last = Data.get_last_report()
+        name = REPORT_ORDER[min(REPORT_ORDER.index(last) + 1, len(REPORT_ORDER) - 1)]
+    elif name == const.PREVIOUS:
+        last = Data.get_last_report()
+        name = REPORT_ORDER[max(REPORT_ORDER.index(last) - 1, 0)]
 
     if name is None:
         name = random.choice(list(REPORTS))
@@ -275,3 +283,4 @@ REPORTS = {
     # 'distance': ('Distance walked', walk_args.distance_summary),
     # Too slow - getting qswatch to give us a sparse histogram would probably make this faster
 }
+REPORT_ORDER = sorted(REPORTS.keys())
