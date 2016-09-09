@@ -29,6 +29,8 @@ import sparklines
 
 import jsdb
 import jsdb.python_copy
+import jsdb.leveldict
+
 
 from . import ipc
 from .symbol import Symbol
@@ -163,7 +165,7 @@ def with_json_data(data_file):
 
 @contextlib.contextmanager
 def with_jsdb_data(data_file):
-    db = jsdb.Jsdb(data_file)
+    db = jsdb.Jsdb(data_file, storage_class=jsdb.leveldict.LevelDict)
     with db:
         try:
             yield db
@@ -525,6 +527,7 @@ def restore(data, backup):
     data.update(**backup_data)
 
 def find_entries(data, name_regex, start_time, end_time, indexes):
+    data.setdefault('metrics', {})
     entries = []
     for metric_name, metric in data['metrics'].items():
         if name_regex is not None and not name_regex.search(metric_name):
