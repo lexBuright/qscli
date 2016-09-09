@@ -1,6 +1,9 @@
+import collections
+import datetime
 import json
 
-from .data import WATCH, SCORER
+from .data import SCORER, WATCH
+
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='gymtime_action')
@@ -52,7 +55,21 @@ def timeseries():
     for entry in reversed(entries):
         result.append('{:.1f}'.format(entry['value']))
     return ' '.join(result)
-        
+
+def daily_timeseries():
+    update()
+    entries = json.loads(SCORER.get().run(['log', '--regex', '^exercise.score.gymtime$', '--json']))
+    seconds_per_day = collections.Counter()
+    for entry in entries:
+        entry_date = datetime.datetime.fromtimestamp(entry['time']).date()
+        seconds_per_day[entry_date] += entry['value']
+
+    result = []
+    today = datetime.date.today()
+    for i in range(10):
+        day = today - datetime.timedelta(days=1) * i
+        result.append('{:.0f}'.format(seconds_per_day[day]))
+    return ' '.join(result)
 
 def toggle():
     data = json.loads(WATCH.get().run(['show', 'exercise.gymtime', '--json']))

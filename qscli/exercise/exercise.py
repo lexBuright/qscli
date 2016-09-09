@@ -286,6 +286,7 @@ REPORTS = {
     'summary': ('Summary', lambda: versus_summary(Data.get_versus_days_ago())),
     'reps': ('Reps comparison', lambda: reps.versus(Data.get_versus_days_ago())),
     'gymtime': ('Time at gym', gymtime.show),
+    'daily-gymtime': ('Daily time at gym', gymtime.daily_timeseries),
     'gymtime-history': ('Historic time at gym', gymtime.timeseries),
     'records': ('New records set today', new_records),
     'records-history': ('Records per day', records_timeseries),
