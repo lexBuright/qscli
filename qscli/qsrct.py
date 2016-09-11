@@ -76,8 +76,10 @@ def main():
         # Double-parse to get config_dir
         #    while using run for testing
         options = PARSER.parse_args()
-        sys.stdout.write(run(QsRct(random, options.config_dir), sys.argv[1:]))
-        sys.stdout.flush()
+        result = (run(QsRct(random, options.config_dir), sys.argv[1:]))
+        if result:
+            sys.stdout.write(result)
+            sys.stdout.flush()
 
 class QsRct(object):
     def __init__(self, random, config_dir):
@@ -97,13 +99,20 @@ class QsRct(object):
         self.ensure_config()
 
         if options.command == 'new':
-            return self.new(options.name, options.options)
+            return self.new(options.name, options.options or [])
+        elif options.command == 'edit':
+            return self.edit(options.name, description=options.description)
         elif options.command == 'assign':
             return self.assign(options.name)
         elif options.command == 'assignments':
             result = self.assignments(options.name)
-            print 'Assignments results', result
             return result
+        elif options.command == 'trials':
+            return self.trials()
+        elif options.command == 'delete':
+            return self.delete(options.name)
+        elif options.command == 'show':
+            return self.show(options.name)
         else:
             raise ValueError(options.command)
 
@@ -126,6 +135,27 @@ class QsRct(object):
     def new(self, name, options):
         with self._with_experiment_data(name) as experiment_data:
             experiment_data['options'] = options
+
+    def edit(self, name, description):
+        with self._with_experiment_data(name) as experiment_data:
+            if description is not None:
+                experiment_data['description'] = description
+
+    def trials(self):
+        with with_data(self._data_file) as data:
+            return '\n'.join(data['experiments'])
+
+    def delete(self, name):
+        with with_data(self._data_file) as data:
+            del data['experiments'][name]
+
+    def show(self, name):
+        result = []
+        with self._with_experiment_data(name) as experiment_data:
+            result.append('options: ' + ' '.join(sorted(experiment_data['options'])))
+            result.append('description: ' + experiment_data['description'])
+
+        return '\n'.join(result)
 
     def _timeseries_run(self, command):
         return backticks([
@@ -196,6 +226,33 @@ class TestQsrct(unittest.TestCase):
         self.assertTrue('good' in lines[0])
         self.assertTrue('bad' in lines[1])
 
+    def test_trials(self):
+        self.run_cli(['new', 'test', '--options', 'good,bad'])
+        result = self.run_cli(['trials'])
+        self.assertEquals(result, 'test')
+
+    def test_delete(self):
+        self.run_cli(['new', 'test', '--options', 'good,bad'])
+        self.run_cli(['delete', 'test'])
+        result = self.run_cli(['trials'])
+        self.assertEquals(result, '')
+
+    def test_show(self):
+        self.run_cli(['new', 'boring-test'])
+
+        self.run_cli(['new', 'test', '--options', 'good,bad'])
+        result = self.run_cli(['show', 'test'])
+        self.assertTrue('options: bad good' in result, result)
+
+        result = self.run_cli(['show', 'boring-test'])
+        self.assertTrue('options:' in result, result)
+
+    def test_edit(self):
+        self.run_cli(['new', 'test'])
+        self.run_cli(['edit', 'test', '--description', 'some testing'])
+        result = self.run_cli(['show', 'test'])
+        self.assertTrue('description: some testing' in result, result)
+
 
     def test_basic(self):
         self.run_cli(['new', 'test', '--options', 'good,bad'])
@@ -218,14 +275,20 @@ class TestQsrct(unittest.TestCase):
 
         print self.run_cli(['test', 'test']) # Two sample t-test
 
+
 def build_parser():
     PARSER = argparse.ArgumentParser(description='Convenience tool to run randomized controlled trial ')
+    PARSER.add_argument('--config-dir', type=str, help='Where to store configuration', default=DEFAULT_DATA_DIR)
     PARSER.add_argument('--debug', action='store_true', help='Include debug output')
     parsers = PARSER.add_subparsers(dest='command')
 
     new = parsers.add_parser('new', help='Create a new experiment')
     new.add_argument('name', type=str)
     new.add_argument('--options', type=parse_csv_line, help='Possible values for the experiment')
+
+    edit = parsers.add_parser('edit', help='Edit an existing experiment')
+    edit.add_argument('name', type=str)
+    edit.add_argument('--description', type=str, help='Information about the experiment')
 
     assign = parsers.add_parser('assign', help='Randomly assign a subject to a particular experiment')
     assign.add_argument('name', type=str)
@@ -239,6 +302,14 @@ def build_parser():
 
     test = parsers.add_parser('test', help='Run a test of the experiment')
     test.add_argument('name', type=str)
+
+    delete = parsers.add_parser('delete', help='Delete an experiment')
+    delete.add_argument('name', type=str)
+
+    show = parsers.add_parser('show', help='Show information about an experiment')
+    show.add_argument('name', type=str)
+
+    test = parsers.add_parser('trials', help='List all trials')
     return PARSER
 
 PARSER = build_parser()
