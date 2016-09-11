@@ -14,7 +14,6 @@ import os
 import sqlite3
 
 LOGGER = logging.getLogger()
-logging.basicConfig(level=logging.DEBUG)
 
 DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qstimeseries')
 
@@ -47,14 +46,24 @@ def append(db, series, value_string, value_type):
 
 def show(db, series):
     cursor = db.cursor()
-    cursor.execute('SELECT time, case float_value is not null then float_value else string_value end from timeseries where series=? order by id', (series,))
-    for time_string, value in  cursor.fetchall():
+
+    query = ['SELECT time, series, coalesce(float_value, string_value) from timeseries']
+    query_options = []
+
+    if series:
+        query.append('where series=?')
+        query_options.append(series)
+
+    query.append('order by time')
+
+    cursor.execute(' '.join(query), query_options)
+    for time_string, series, value in  cursor.fetchall():
         time = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-        print time.isoformat(), value
-        print time.isoformat(), value
+        print time.isoformat(), series, value
 
 
 PARSER = argparse.ArgumentParser(description='Very simple command line timeseries')
+PARSER.add_argument('--debug', action='store_true', help='Include debug output (to stderr)')
 PARSER.add_argument('--config-dir', '-C', help='Directory to store configuration and data')
 
 parsers = PARSER.add_subparsers(dest='command')
@@ -65,13 +74,16 @@ append_command.add_argument('--string', action='store_const', dest='value_type',
 append_command.add_argument('value', type=str)
 
 show_command = parsers.add_parser('show', help='Show the values in a series')
-show_command.add_argument('series', type=str, help='Timeseries')
+show_command.add_argument('--series', type=str, help='Timeseries')
 
 
 def main():
     options = PARSER.parse_args()
 
     config_dir = options.config_dir or DEFAULT_CONFIG_DIR
+
+    if options.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
     if not os.path.isdir(config_dir):
         os.mkdir(config_dir)

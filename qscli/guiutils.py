@@ -36,3 +36,6 @@ def float_prompt(prompt):
 
 def int_prompt(prompt):
     return _prompt_for_thing(prompt, int)
+
+def str_prompt(prompt):
+    return _prompt_for_thing(prompt, str)
