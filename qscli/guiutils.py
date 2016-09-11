@@ -22,7 +22,7 @@ def combo_prompt(prompt, choices):
 def _prompt_for_thing(prompt, parse):
     while True:
         p = subprocess.Popen(
-            ['zenity', '--entry', '--title', prompt],
+            ['zenity', '--entry', '--text', prompt],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         reply, _ = p.communicate('')
         try:
