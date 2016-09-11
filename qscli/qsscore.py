@@ -129,7 +129,9 @@ metric_command(parsers, 'run-length')
 
 summary_parser = metric_command(parsers, 'summary', help='Summarise a result (defaults to the last value)')
 summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
-summary_parser.add_argument('--id', type=str, help='Show summary for the result with this id')
+ident_mx = summary_parser.add_mutually_exclusive_group()
+ident_mx.add_argument('--id', type=str, help='Show summary for the result with this id')
+ident_mx.add_argument('--index', type=int, help='Show the nth most recent value', default=0)
 
 parsers.add_parser('list', help='List the things that we have scores for')
 
@@ -294,7 +296,7 @@ def run(options, stdin):
         elif options.command == 'run-length':
             return run_length(metric_data)
         elif options.command == 'summary':
-            return summary(metric_data, options.update)
+            return summary(metric_data, options.update, ident=options.id, index=options.index)
         elif options.command == 'config':
             return config(
                 metric_data,
@@ -403,27 +405,33 @@ def best_ratio(metric_data):
         else:
             return last / max(rest)
 
-def get_value(metric_data, ident=None):
-    return get_last_values(metric_data, 1, ident)[0]
+def get_value(metric_data, ident=None, index=0):
+    return get_last_values(metric_data, 1, ident, index=index)[0]
 
-def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_period=1):
+def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_period=1, index=0):
     """If ids_before_func use it to generate a set of ids
     before the last value (of the one specified by ident
     """
+    if index < 0:
+        raise ValueError(index)
+
     has_ids = any(entry.get('id') for entry in metric_data['values'])
+
+    negative_index = -1 - index
+
 
     if has_ids:
         if ident is None:
             id_entries = sorted(metric_data['values'], key=lambda x: x.get('id'))
-            entries = id_entries[-1:-num - 1:-1]
+            entries = id_entries[negative_index:negative_index - num:-1]
         else:
             before_id_entries = sorted([x for x in metric_data['values'] if x.get('id') <= ident], key=lambda x: x.get('id'))
-            entries = before_id_entries[-1:-num - 1:-1]
+            entries = before_id_entries[negative_index:negative_index - num:-1]
     else:
         if ident is not None:
             raise ValueError(ident)
         else:
-            entries = metric_data['values'][-1:-num - 1:-1]
+            entries = metric_data['values'][negative_index:negative_index - num:-1]
 
     if not has_ids and ids_before_func:
         raise Exception('Can only use an ids_before_func when we have ids')
@@ -437,8 +445,8 @@ def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_pe
         result = [e['value'] for e in entries]
         return result
 
-def summary(metric_data, update=False, ident=None):
-    value = get_value(metric_data, ident)
+def summary(metric_data, update=False, ident=None, index=0):
+    value = get_value(metric_data, ident, index=index)
     messages = ['{:.2f}'.format(value)]
     value_rank = rank(metric_data, ident=None)
     if value_rank == 0 and len(metric_data['values']) > 1:
@@ -466,7 +474,7 @@ def summary(metric_data, update=False, ident=None):
 
     ids_before_func = ident_type and IDS_BEFORE_FUNCS[ident_type]
 
-    old = list(get_last_values(metric_data, 10, ident=ident, ids_before_func=ids_before_func, ident_period=ident_period))
+    old = list(get_last_values(metric_data, 10, ident=ident, ids_before_func=ids_before_func, ident_period=ident_period, index=index))
     messages.append(sparklines.sparklines(old)[0])
 
     return u'{}'.format('\n'.join(messages))
@@ -497,9 +505,6 @@ def iso_minutes_before(end, count, period):
     for day in date_series(end_hour, count, datetime.timedelta(seconds=-period * 60)):
         results.append(day.strftime('%Y-%m-%dT%H:%M:%S'))
     return results
-
-
-
 
 def ordinal(number):
     return str(number) + {
