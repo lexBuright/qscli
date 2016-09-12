@@ -144,7 +144,13 @@ def main():
         if options.debug:
             logging.basicConfig(level=logging.DEBUG)
 
-        print(unicode(run(options, sys.stdin)).encode('utf8'))
+
+        LOGGER.debug('Running')
+        result = run(options, sys.stdin)
+        LOGGER.debug('Finished running')
+
+        formatted = unicode(result).encode('utf8')
+        print(formatted)
 
 def read_json(filename):
     if os.path.exists(filename):
@@ -175,7 +181,9 @@ def with_jsdb_data(data_file):
             db.rollback()
             raise
         else:
+            LOGGER.debug('Committing')
             db.commit()
+            LOGGER.debug('Committed')
 
 with_data = with_jsdb_data
 
@@ -349,12 +357,14 @@ def update(metric_data, value, ident):
         metric_values.append(entry)
 
     if ident is not None:
+        LOGGER.debug('Finding ident')
         ident_entries = [x for x in metric_values if x.get('id') == ident]
         if ident_entries:
             ident_entry, = ident_entries
             ident_entry['value'] = value
         else:
             metric_values.append(entry)
+        LOGGER.debug('Found ident')
     else:
         metric_values[-1] = entry
 
@@ -385,6 +395,8 @@ def run_length(metric_data):
 
 def quantile(metric_data):
     # don't pull in numpy / scipy dependnecies
+    LOGGER.debug('Quantile')
+
     values = [d['value'] for d in metric_data['values']]
     if not values:
         return None
@@ -406,6 +418,7 @@ def best_ratio(metric_data):
             return last / max(rest)
 
 def get_value(metric_data, ident=None, index=0):
+    LOGGER.debug('Getting value')
     return get_last_values(metric_data, 1, ident, index=index)[0]
 
 def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_period=1, index=0):
@@ -446,6 +459,8 @@ def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_pe
         return result
 
 def summary(metric_data, update=False, ident=None, index=0):
+    LOGGER.debug('Summarising')
+
     value = get_value(metric_data, ident, index=index)
     messages = ['{:.2f}'.format(value)]
     value_rank = rank(metric_data, ident=None)
@@ -474,10 +489,15 @@ def summary(metric_data, update=False, ident=None, index=0):
 
     ids_before_func = ident_type and IDS_BEFORE_FUNCS[ident_type]
 
+    LOGGER.debug('Building sparkline')
     old = list(get_last_values(metric_data, 10, ident=ident, ids_before_func=ids_before_func, ident_period=ident_period, index=index))
     messages.append(sparklines.sparklines(old)[0])
 
-    return u'{}'.format('\n'.join(messages))
+
+    LOGGER.debug('Formatting result')
+    result = u'{}'.format('\n'.join(messages))
+    LOGGER.debug('Result formatted')
+    return result
 
 def date_series(end, count, step):
     date = end
