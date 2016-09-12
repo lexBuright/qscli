@@ -367,12 +367,12 @@ def update(metric_data, value, ident):
         LOGGER.debug('Found ident')
     else:
         metric_values[-1] = entry
-
     return ''
 
-def rank(metric_data, ident=None):
+def rank(metric_data, ident=None, index=0):
+    LOGGER.debug('Rank')
     result = 0
-    last = get_value(metric_data, ident)
+    last = get_value(metric_data, ident, index=index)
     for entry in metric_data['values']:
         if entry['value'] > last:
             result += 1
@@ -393,7 +393,7 @@ def run_length(metric_data):
     result = len(list(itertools.takewhile(lambda x: x[0] > x[1], records))) + 1
     return result
 
-def quantile(metric_data):
+def quantile(metric_data, index=0):
     # don't pull in numpy / scipy dependnecies
     LOGGER.debug('Quantile')
 
@@ -401,16 +401,16 @@ def quantile(metric_data):
     if not values:
         return None
 
-    last = get_value(metric_data)
+    last = get_value(metric_data, index=index)
     lower = len([x for x in values if x <= last])
     upper = len(values) - len([x for x in values if x > last])
     return float(lower + upper) / 2 / len(values)
 
-def best_ratio(metric_data):
+def best_ratio(metric_data, index=0):
     if len(metric_data['values']) < 1:
         return None
     else:
-        last = get_value(metric_data)
+        last = get_value(metric_data, index=index)
         rest = [x['value'] for x in metric_data['values'][:-1]]
         if not rest or max(rest) == 0:
             return None
@@ -463,7 +463,7 @@ def summary(metric_data, update=False, ident=None, index=0):
 
     value = get_value(metric_data, ident, index=index)
     messages = ['{:.2f}'.format(value)]
-    value_rank = rank(metric_data, ident=None)
+    value_rank = rank(metric_data, ident=None, index=index)
     if value_rank == 0 and len(metric_data['values']) > 1:
         messages.append('New best')
 
@@ -479,8 +479,8 @@ def summary(metric_data, update=False, ident=None, index=0):
 
     if len(metric_data['values']) > 1:
         messages.append('{} best'.format(ordinal(value_rank + 1)))
-        messages.append('Quantile: {:.2f}'.format(quantile(metric_data)))
-        ratio = best_ratio(metric_data)
+        messages.append('Quantile: {:.2f}'.format(quantile(metric_data, index=index)))
+        ratio = best_ratio(metric_data, index=index)
         if ratio is not None:
             messages.append('Ratio of best: {:.2f}'.format(ratio))
 
