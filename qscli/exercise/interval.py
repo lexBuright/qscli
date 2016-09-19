@@ -226,14 +226,13 @@ def start(exercise):
     WATCH.get().run(['start', 'exercise.interval'])
     print 'Start', exercise
     for index in itertools.count(1):
-        print '{} for {} seconds'.format(exercise, active_period)
-        print '\n\n'
-
-
         # IMPROVEMENT: Ideally this would immediately break when the clock stops
         data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
         if not data['running']:
             break
+
+        print '{} for {} seconds'.format(exercise, active_period)
+        print '\n\n'
 
         time.sleep(active_period)
         data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
