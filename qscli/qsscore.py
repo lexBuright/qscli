@@ -342,10 +342,27 @@ def store(metric_data, value):
 
 def store_csv(metric_data, csv_string):
     entries = list(csv.reader(StringIO(csv_string)))
+
+    value_by_id = dict(entries)
+    updated = set()
+
+    metric_values = metric_data.setdefault('values', [])
+    for entry in metric_values:
+        entry_id = entry.get('id')
+        if entry_id is not None:
+            if entry_id in value_by_id:
+                entry['value'] = float(value_by_id[entry_id])
+                entry['time'] = time.time()
+                updated.add(entry_id)
+
     for ident, value in entries:
-        LOGGER.debug('Updating %r', ident)
-        update(metric_data, float(value), ident)
+        if ident in updated:
+            continue
+        else:
+            metric_values.append(dict(time=time.time(), id=ident, value=float(value)))
+
     return ''
+
 
 def update(metric_data, value, ident):
     metric_values = metric_data.setdefault('values', [])
