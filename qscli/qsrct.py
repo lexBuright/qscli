@@ -73,6 +73,9 @@ class FakeRandom(object):
 
         return self.destined_values.pop(0)
 
+Result = collections.namedtuple('Result', 'returncode output')
+
+
 def main():
     if '--debug' in sys.argv:
         logging.basicConfig(level=logging.DEBUG)
@@ -85,11 +88,15 @@ def main():
         #    while using run for testing
         options = build_parser().parse_args()
         result = (run(QsRct(random, options.config_dir), sys.argv[1:]))
-        if result:
-            if result:
-                sys.stdout.write(result)
-                sys.stdout.write('\n')
-                sys.stdout.flush()
+
+        if not isinstance(result, Result):
+            result = Result(output=result, returncode=0)
+
+        if result.output:
+            sys.stdout.write(result.output)
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+        sys.exit(result.returncode)
 
 class QsRct(object):
     def __init__(self, random, config_dir):
@@ -111,7 +118,7 @@ class QsRct(object):
         if options.command == 'edit' or options.command == 'new':
             return self.edit(options.name, description=options.description, options=options.options, assign_period=options.assign_period, data_source=options.data_source)
         elif options.command == 'assign':
-            return self.assign(options.name)
+            return self.assign(options.name, check=options.check)
         elif options.command == 'assignments':
             result = self.assignments(options.name)
             return result
@@ -133,7 +140,7 @@ class QsRct(object):
     def timeseries(self, command):
         return self._timeseries_run(command)
 
-    def assign(self, name):
+    def _assign(self, name):
         with self._with_experiment_data(name) as experiment_data:
             options = experiment_data['options']
             if not options:
@@ -163,7 +170,17 @@ class QsRct(object):
                 command += ['--id', str(ident)]
 
             self._timeseries_run(command)
+
+    def assign(self, name, check=None):
+        assignment = self._assign(name)
+        if check is not None :
+            if assignment != check:
+                return Result(returncode=1, output=assignment)
+            else:
+                return assignment
+        else:
             return assignment
+
 
     def assignments(self, name):
         return self._timeseries_run(['show', '--series', 'assignments.{}'.format(name)])
@@ -433,6 +450,7 @@ def build_parser():
 
     assign = parsers.add_parser('assign', help='Randomly assign a subject to a particular experiment')
     assign.add_argument('name', type=str)
+    assign.add_argument('--check', type=str, metavar='VALUE', help='Exit with a non-zero return code if VALUE is not returned')
 
     result = parsers.add_parser('result', help='Record a result for this assignment (not necessary if using another source for storage)')
     result.add_argument('name', type=str)
