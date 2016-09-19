@@ -17,7 +17,7 @@ def add_subparser(parser):
     settings_prompt(new_endurance, True)
 
     start_parser = sub.add_parser('start')
-    parsers.exercise_prompt(start_parser)
+    parsers.exercise_prompt(start_parser, required=False)
     settings_prompt(start_parser, False)
 
     sub.add_parser('stop')
