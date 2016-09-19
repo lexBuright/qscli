@@ -178,6 +178,8 @@ def edit_question(data, name, period, prompt, type, choices=None, if_command=Non
         question['choices'] = None
     if 'type' not in question:
         question['type'] = STRING
+    if 'if_command' not in question:
+        question['if_command'] = None
 
     if period is not None:
         question['period'] = period
