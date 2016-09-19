@@ -37,17 +37,22 @@ PARSER.add_argument('--debug', action='store_true', help='Include debug output (
 parsers = PARSER.add_subparsers(dest='command')
 test = parsers.add_parser('test', help='Run the tests')
 
-new = parsers.add_parser('new', help='Create a new question')
-new.add_argument('name', type=str)
-new.add_argument('--period', type=float, help='Average about of time between asking question', default=3600)
-new.add_argument('--type', type=str, choices=(STRING, FLOAT), help='The type of answer to record', default=STRING)
-new.add_argument('--prompt', type=str, help='Prompt message', default='')
+def space_dsv(string):
+    return string.split()
 
-edit = parsers.add_parser('edit', help='Change properties of a question')
-edit.add_argument('name', type=str)
-edit.add_argument('--period', type=float, help='Average about of time between asking question')
-edit.add_argument('--type', type=str, choices=(STRING, FLOAT), help='The type of answer to record')
-edit.add_argument('--prompt', type=str, help='Prompt message')
+def parse_csv(string):
+    return string.split(',')
+
+def new_or_edit(parser, name):
+    new = parsers.add_parser(name, help='Create a new question')
+    new.add_argument('name', type=str)
+    new.add_argument('--period', type=float, help='Average about of time between asking question')
+    new.add_argument('--type', type=str, choices=(STRING, FLOAT), help='The type of answer to record')
+    new.add_argument('--prompt', type=str, help='Prompt message')
+    new.add_argument('--if-command', type=space_dsv, help='Only ask if this command succeeds')
+
+new_or_edit(PARSER, 'new')
+new_or_edit(PARSER, 'edit')
 
 show = parsers.add_parser('show', help='Show information about a question')
 show.add_argument('name', type=str)
@@ -57,11 +62,15 @@ log = parsers.add_parser('log', help='Show timeseries of record questions')
 daemon = parsers.add_parser('daemon', help='Process that asks questions')
 daemon.add_argument('--dry-run', '-n', action='store_true', help='Print out actions rather than carrying them out')
 daemon.add_argument('--multiplier', '-m', type=float, help='Ask questions more quickly', default=1.0)
+daemon.add_argument('--questions', '-q', type=parse_csv, help='Csv of questions you want to ask')
 
 list_parser = parsers.add_parser('list', help='List the questions')
 
 delete_parser = parsers.add_parser('delete', help='Delete a question')
 delete_parser.add_argument('name', type=str)
+
+ask_parser = parsers.add_parser('ask', help='Force the asking of question (risks selection bias)')
+ask_parser.add_argument('name', type=str)
 
 LOGGER = logging.getLogger()
 
@@ -102,8 +111,15 @@ def timeseries_run(data_dir, command):
 def log(data_dir):
     return timeseries_run(data_dir, ['show'])
 
-def store_answer(data_dir, name, answer):
-    return timeseries_run(data_dir, ['append', name, str(answer)])
+def store_answer(data_dir, name, answer, type):
+    if type == STRING:
+        type_argument = ['--string']
+    elif type == FLOAT:
+        type_argument = []
+    else:
+        raise ValueError(type)
+
+    return timeseries_run(data_dir, ['append', name, str(answer)] + type_argument)
 
 def run(args):
     LOGGER.debug('Running with args %r', args)
@@ -112,15 +128,16 @@ def run(args):
     data_file = os.path.join(options.config_dir, 'data.json')
     LOGGER.debug('Question file %r', data_file)
     if options.command == 'daemon':
-        return run_daemon(options.config_dir, data_file, options.multiplier)
+        return run_daemon(options.config_dir, data_file, options.multiplier, options.questions)
 
     with with_data(data_file) as data:
         init_data(data)
-        if options.command == 'new':
-            verify_new(data, options.name)
-            return edit_question(data, options.name, period=options.period, prompt=options.prompt, type=options.type)
-        elif options.command == 'edit':
-            return edit_question(data, options.name, period=options.period, prompt=options.prompt, type=options.type)
+        if options.command in ('new', 'edit'):
+            if options.command == 'new':
+                verify_new(data, options.name)
+            return edit_question(data, options.name, period=options.period, prompt=options.prompt, type=options.type, if_command=options.if_command)
+        elif options.command == 'ask':
+            ask_and_store(options.config_dir, data, options.name)
         elif options.command == 'show':
             return show_question(data, options.name)
         elif options.command == 'log':
@@ -149,27 +166,35 @@ def verify_new(data, name):
     if name in data['questions']:
         raise Exception('Already a question {!r}'.format(name))
 
-def edit_question(data, name, period, prompt, type, choices=None):
+def edit_question(data, name, period, prompt, type, choices=None, if_command=None):
     data['questions'].setdefault(name, {})
+    question = data['questions'][name]
+
+    if 'period' not in question:
+        question['period'] = 3600
+    if 'prompt' not in question:
+        question['prompt'] = ''
+    if 'choices' not in question:
+        question['choices'] = None
+    if 'type' not in question:
+        question['type'] = STRING
 
     if period is not None:
-        data['questions'][name]['period'] = period
-
+        question['period'] = period
     if prompt is not None:
-        data['questions'][name]['prompt'] = prompt
-
+        question['prompt'] = prompt
     if choices:
-        data['question'][name].setdefault('choices', [])
-        data['question'][name]['choices'].extend(choices)
-
+        question.setdefault('choices', [])
+        question['choices'].extend(choices)
     if type is not None:
-        data['questions'][name]['type'] = type
+        question['type'] = type
+    if if_command is not None:
+        question['if_command'] = if_command
 
 def list_questions(data):
     result = []
-    for name in data['questions']:
-        result.append(name)
-
+    for name, question in sorted(data['questions'].items()):
+        result.append('{} {}'.format(name, question['period']))
     if result:
         return '\n'.join(result) + '\n'
 
@@ -189,7 +214,7 @@ def calculate_ask_prob(question_period, poll_period):
 
     return float(poll_period) / float(question_period)
 
-def run_daemon(data_dir, data_file, multiplier):
+def run_daemon(data_dir, data_file, multiplier, questions):
     period = 1
     while True:
         LOGGER.debug('Polling')
@@ -197,12 +222,17 @@ def run_daemon(data_dir, data_file, multiplier):
             init_data(data)
             data.setdefault('questions', {})
 
+            unknown_questions = set(questions) - set(data['questions']) if questions is not None else None
+
+            if unknown_questions:
+                raise Exception('Question filter contains unknown questions %r', list(questions))
+
             if not data['questions']:
                 LOGGER.debug('No questions to think about asking')
 
-
             for name, question in data['questions'].items():
-                question['period']
+                if questions is not None and name not in questions:
+                    continue
 
                 # Hooray for memorilessness
                 ask_prob = calculate_ask_prob(question['period'], period)
@@ -210,10 +240,30 @@ def run_daemon(data_dir, data_file, multiplier):
                 LOGGER.debug('Probability of asking %s: %s', name, ask_prob)
                 if random.random() < ask_prob:
                     LOGGER.debug('Asking %s', name)
-                    answer = ask_question(question)
-                    store_answer(data_dir, name, answer)
+                    ask_and_store(data_dir, data, name)
 
         time.sleep(period / multiplier)
+
+def ask_and_store(data_dir, data, name):
+    question = data['questions'][name]
+
+    if question['if_command']:
+        LOGGER.debug('Running process to check if we should run: %r', question['if_command'])
+        p = subprocess.Popen(question['if_command'])
+        p.wait()
+        if p.returncode == 0:
+            LOGGER.debug('if-command succeeded')
+            should_run = True
+        else:
+            LOGGER.debug('if-command failed: not running')
+            should_run = False
+    else:
+        LOGGER.debug('No if command')
+        should_run = True
+
+    if should_run:
+        answer = ask_question(question)
+        store_answer(data_dir, name, answer, question['type'])
 
 
 def ask_question(question):
