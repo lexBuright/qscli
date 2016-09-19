@@ -589,7 +589,9 @@ def find_entries(data, name_regex, start_time, end_time, indexes):
 
     entries.sort(key=lambda v: v['time'])
 
+
     if indexes:
+        indexes = [(len(entries) + i if i < 0 else i ) for i in indexes]
         entries = [e for i, e in enumerate(entries) if i in indexes]
 
     return entries
