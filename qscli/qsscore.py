@@ -25,12 +25,11 @@ import unittest
 from StringIO import StringIO
 
 import fasteners
-import sparklines
 
 import jsdb
-import jsdb.python_copy
 import jsdb.leveldict
-
+import jsdb.python_copy
+import sparklines
 
 from . import ipc
 from .symbol import Symbol
