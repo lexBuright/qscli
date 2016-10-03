@@ -18,6 +18,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -112,9 +113,16 @@ backup_command = parsers.add_parser('backup', help='Dump out all data to standar
 restore_command = parsers.add_parser('restore', help='Restore a previous data dump')
 
 config_command = parsers.add_parser('config', help='Change the configuration for a series')
-config_command.add_argument('--id-type', type=str, choices=('isodate', 'isohour', 'isominute'), help='Specify the form that ids take so as to fill in gaps. isodata=YYYY-MM-DD, isohour=YYYY-MM-DDTHH:00', dest='ident_type')
-config_command.add_argument('--id-period', type=int, help='How id-type units per reading', dest='ident_period')
+config_command.add_argument('--id-type', type=str, choices=('isodate', 'isohour', 'isominute'), help='Automatically create IDs. iosdate means ids of the form YYYY-MM-DD every number of days, isohour and isominute means ids taking the form of timestamps', dest='ident_type')
+config_command.add_argument('--id-period', type=int, help='How many id-type units per reading', dest='ident_period')
 config_command.add_argument('metric', type=str)
+
+command_update = parsers.add_parser('command-update', help='If an --id-type is specified then update values by running an external command with ID as an argument')
+command_update.add_argument('metric', type=str)
+command_update.add_argument('update_command', nargs='+', type=str, help='Command to run')
+command_update.add_argument('--refresh', action='store_true', default=False, help='Update pre-existing values')
+command_update.add_argument('--first-id', type=str, help='Start updating at this id. Defaults to minimum stored id')
+
 
 
 def metric_command(parsers, name, help=''):
@@ -312,8 +320,34 @@ def run(options, stdin):
                 metric_data,
                 options.ident_type,
                 options.ident_period)
+        elif options.command == 'command-update':
+            command_update(metric_data, command=options.update_command, refresh=options.refresh, first_id=options.first_id)
         else:
             raise ValueError(options.command)
+
+def command_update(metric_data, command, refresh, first_id):
+    if not metric_data.get('ident_type'):
+        raise Exception('Must have an --id-type to use this options')
+
+    if first_id is None:
+        first_id = min(value['id'] for value in metric_data['values'] if value['id'] is not None)
+
+    last_id = TIME_ID_FUNC[metric_data.get('ident_type')](metric_data.get('ident_period', 1), datetime.datetime.now())
+    known_idents = set(value['id'] for value in metric_data['values'] if value['id'] is not None)
+
+    id_series = ID_SERIES[metric_data['ident_type']]
+    for ident in id_series(first_id, metric_data.get('ident_period', 1)):
+        if ident > last_id:
+            break
+
+        if refresh or ident not in known_idents:
+            LOGGER.debug('Updating %r', ident)
+            LOGGER.debug('Running command %r', command + [ident])
+            value = float(subprocess.check_output(command + [ident]))
+            update(metric_data, value, ident)
+        else:
+            LOGGER.debug('Already a value for %r', ident)
+
 
 def config(metric_data, ident_type, ident_period):
     if ident_type is not None:
@@ -365,8 +399,36 @@ def store_csv(metric_data, csv_string):
 
     return ''
 
+def current_isodate(period, dt):
+    # Start counting at the unix epoch
+    count_start = datetime.date(1970, 1, 1)
+    days = (dt.date() - count_start).total_seconds() / 86400
+    result = count_start + datetime.timedelta(days=days // period * period)
+    return result.isoformat()
+
+def current_isohour(period, dt):
+    # start counting from the beginning of the day
+    count_start = dt.replace(hours=0, minutes=0, seconds=0, milliseconds=0)
+    hours = (dt - count_start).total_seconds() / 3600
+    result = count_start + datetime.timedelta(hours=hours // period * period)
+    return result.isoformat()
+
+def current_isominute(period, dt):
+    count_start = dt.replace(hours=0, minutes=0, seconds=0, milliseconds=0)
+    minutes = (dt - count_start).total_seconds() / 60
+    result = count_start + datetime.timedelta(minutes=minutes // period * period)
+    return result.isoformat()
+
+TIME_ID_FUNC = {
+    'isodate': current_isodate,
+    'isohour': current_isohour,
+    'isominute': current_isominute
+}
 
 def update(metric_data, value, ident):
+    if metric_data.get('ident_type') and ident is None:
+        ident = TIME_ID_FUNC[metric_data.get('ident_type')](datetime.datetime.now())
+
     metric_values = metric_data.setdefault('values', [])
     entry = dict(time=time.time(), value=value)
     if ident is not None:
@@ -376,14 +438,13 @@ def update(metric_data, value, ident):
         metric_values.append(entry)
 
     if ident is not None:
-        LOGGER.debug('Finding ident')
+        LOGGER.debug('update: looking up old value')
         ident_entries = [x for x in metric_values if x.get('id') == ident]
         if ident_entries:
             ident_entry, = ident_entries
             ident_entry['value'] = value
         else:
             metric_values.append(entry)
-        LOGGER.debug('Found ident')
     else:
         metric_values[-1] = entry
     return ''
@@ -440,7 +501,7 @@ def get_value(metric_data, ident=None, index=0):
     LOGGER.debug('Getting value')
     return get_last_values(metric_data, 1, ident, index=index)[0]
 
-def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_period=1, index=0):
+def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1, index=0):
     """If ids_before_func use it to generate a set of ids
     before the last value (of the one specified by ident
     """
@@ -465,11 +526,12 @@ def get_last_values(metric_data, num, ident=None, ids_before_func=None, ident_pe
         else:
             entries = metric_data['values'][negative_index:negative_index - num:-1]
 
-    if not has_ids and ids_before_func:
+    if not has_ids and id_series:
         raise Exception('Can only use an ids_before_func when we have ids')
 
-    if ids_before_func:
-        idents = ids_before_func(ident or entries[0]['id'], num, ident_period)
+    if id_series:
+        series = id_series(ident or entries[0]['id'], -ident_period)
+        idents = itertools.islice(series, count)
         values_by_id = {e['id']: e['value'] for e in entries}
         result = [values_by_id.get(ident, 0) for ident in idents]
         return result
@@ -506,10 +568,10 @@ def summary(metric_data, update=False, ident=None, index=0):
     ident_type = metric_data.get('ident_type', None)
     ident_period = metric_data.get('ident_period', 1)
 
-    ids_before_func = ident_type and IDS_BEFORE_FUNCS[ident_type]
+    id_series = ident_type and ID_SERIES[ident_type]
 
     LOGGER.debug('Building sparkline')
-    old = list(get_last_values(metric_data, 10, ident=ident, ids_before_func=ids_before_func, ident_period=ident_period, index=index))
+    old = list(get_last_values(metric_data, 10, ident=ident, id_series=id_series, ident_period=ident_period, index=index))
     messages.append(sparklines.sparklines(old)[0])
 
 
@@ -518,32 +580,26 @@ def summary(metric_data, update=False, ident=None, index=0):
     LOGGER.debug('Result formatted')
     return result
 
-def date_series(end, count, step):
+def date_series(end, step):
     date = end
-    for i in range(0, count):
+    for i in itertools.count(0):
         yield date
         date += step
 
-def iso_days_before(end, count, period):
-    end_day = datetime.datetime.strptime(end, '%Y-%m-%d')
-    results = []
-    for day in date_series(end_day, count, datetime.timedelta(days=-period)):
-        results.append(day.strftime('%Y-%m-%d'))
-    return results
+def iso_date_series(start, period):
+    start_day = datetime.datetime.strptime(start, '%Y-%m-%d')
+    for day in date_series(start_day, datetime.timedelta(days=period)):
+        yield day.strftime('%Y-%m-%d')
 
-def iso_hours_before(end, count, period):
-    end_hour = datetime.datetime.strptime(end, '%Y-%m-%dT%H:%M:%S')
-    results = []
-    for day in date_series(end_hour, count, datetime.timedelta(hours=-period)):
-        results.append(day.strftime('%Y-%m-%dT%H:%M:%S'))
-    return results
+def iso_hours_series(start, period):
+    start_hour = datetime.datetime.strptime(start, '%Y-%m-%dT%H:%M:%S')
+    for dt in date_series(start_hour, datetime.timedelta(hours=period)):
+        yield dt.strftime('%Y-%m-%dT%H:%M:%S')
 
-def iso_minutes_before(end, count, period):
-    end_hour = datetime.datetime.strptime(end, '%Y-%m-%dT%H:%M:%S')
-    results = []
-    for day in date_series(end_hour, count, datetime.timedelta(seconds=-period * 60)):
-        results.append(day.strftime('%Y-%m-%dT%H:%M:%S'))
-    return results
+def iso_minutes_series(start, period):
+    start_hour = datetime.datetime.strptime(start, '%Y-%m-%dT%H:%M:%S')
+    for dt in date_series(start_hour, datetime.timedelta(seconds=-period * 60)):
+        yield dt.strftime('%Y-%m-%dT%H:%M:%S')
 
 def ordinal(number):
     return str(number) + {
@@ -649,10 +705,10 @@ def records(data, json_output, regex, start=None, end=None):
     else:
         return json.dumps(dict(records=result))
 
-IDS_BEFORE_FUNCS = {
-    'isohour': iso_hours_before,
-    'isodate': iso_days_before,
-    'isominute': iso_minutes_before,
+ID_SERIES = {
+    'isohour': iso_hours_series,
+    'isodate': iso_date_series,
+    'isominute': iso_minutes_series,
 }
 
 class TestCli(unittest.TestCase):
