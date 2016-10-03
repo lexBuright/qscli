@@ -1,0 +1,306 @@
+#!/usr/bin/python
+"""Stupidly feature-complete command-line tool to keep track of scores;
+Quickly gameify any activity.
+
+Designed to be useable programmatically, though you might prefer to use something like a
+database of ELK (elasticsearch logstash kibana) if you are being serious.
+"""
+
+import argparse
+import contextlib
+import datetime
+import json
+import logging
+import os
+import re
+import sys
+import unittest
+
+import fasteners
+
+import jsdb
+import jsdb.leveldict
+import jsdb.python_copy
+
+from .. import ipc
+from ..symbol import Symbol
+
+from . import store
+from . import config
+from . import statistics
+
+LOGGER = logging.getLogger()
+
+UNKNOWN = Symbol('unknown')
+
+DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
+
+def regexp_option(parser):
+    parser.add_argument('--regex', '-x', type=re.compile, help='Only return entries whose metric name match this regexp')
+
+def days_ago_option(parser):
+    parser.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+
+UNIT_SIZE = {'h': datetime.timedelta(seconds=3600), 'm': datetime.timedelta(seconds=60), 's': datetime.timedelta(seconds=1), 'd': datetime.timedelta(days=1)}
+
+def fuzzy_date(string):
+    m = re.search(r'^(\d+)([mhsd])$', string)
+    if m:
+        count, unit = m.groups()
+        if unit == 'd':
+            round_now = datetime.datetime.now().replace(hour=0, second=0, microsecond=0)
+        else:
+            round_now = datetime.datetime.now()
+        return round_now - int(count) * UNIT_SIZE[unit]
+    elif re.search(r'^\d\d\d\d-\d\d-\d\d$', string):
+        return datetime.datetime.strptime(string, '%Y-%m-%d').replace(hour=0, second=0, microsecond=0)
+    else:
+        # Ugg, ignore timezones
+        return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%S')
+
+def build_parser():
+    PARSER = argparse.ArgumentParser(description=__doc__)
+    PARSER.add_argument('--debug', action='store_true', help='Print debug output')
+
+    PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
+    parsers = PARSER.add_subparsers(dest='command')
+
+    store_command = parsers.add_parser('store', help='Store a score')
+    store_command.add_argument('metric', type=str)
+    store_command.add_argument('value', type=float)
+
+    store_csv_command = parsers.add_parser('store-csv', help='Read a csv of id-value pairs and store/update them')
+    store_csv_command.add_argument('metric', type=str)
+
+    parsers.add_parser('daemon', help='Run a daemon')
+
+    log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
+    def log_command_option(command):
+        regexp_option(command)
+        log_date = command.add_mutually_exclusive_group()
+        log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+        log_date.add_argument('--since', type=fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
+        command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+        command.add_argument('--index', action='append', type=int, help='Only delete these indexes')
+
+    log_command_option(log_command)
+
+    delete_record_command = parsers.add_parser('delete-record', help='Delete recorded scores (arguments as for log)')
+    log_command_option(delete_record_command)
+
+    update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
+    update_command.add_argument('metric', type=str)
+    update_command.add_argument('value', type=float)
+    update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
+
+    records_command = parsers.add_parser('records', help='Display when records were obtained')
+    records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+    days_ago_option(records_command)
+    regexp_option(records_command)
+
+    delete_command = parsers.add_parser('delete', help='Delete a metric')
+    delete_command.add_argument('metric', type=str)
+
+    move_command = parsers.add_parser('move', help='Rename a metric')
+    move_command.add_argument('old_name', type=str)
+    move_command.add_argument('new_name', type=str)
+
+    parsers.add_parser('backup', help='Dump out all data to standard out')
+    parsers.add_parser('restore', help='Restore a previous data dump')
+
+    config_command = parsers.add_parser('config', help='Change the configuration for a series')
+    config_command.add_argument('--id-type', type=str, choices=('isodate', 'isohour', 'isominute'), help='Automatically create IDs. iosdate means ids of the form YYYY-MM-DD every number of days, isohour and isominute means ids taking the form of timestamps', dest='ident_type')
+    config_command.add_argument('--id-period', type=int, help='How many id-type units per reading', dest='ident_period')
+    config_command.add_argument('metric', type=str)
+
+    command_update_p = parsers.add_parser('command-update', help='If an --id-type is specified then update values by running an external command with ID as an argument')
+    command_update_p.add_argument('metric', type=str)
+    command_update_p.add_argument('update_command', nargs='+', type=str, help='Command to run')
+    command_update_p.add_argument('--refresh', action='store_true', default=False, help='Update pre-existing values')
+    command_update_p.add_argument('--first-id', type=str, help='Start updating at this id. Defaults to minimum stored id')
+
+    def metric_command(p, name, help_string=''):
+        command = p.add_parser(name, help=help_string)
+        command.add_argument('metric', type=str)
+        return command
+
+    metric_command(parsers, 'best')
+    metric_command(parsers, 'mean')
+    metric_command(parsers, 'run-length')
+
+    summary_parser = metric_command(parsers, 'summary', help_string='Summarise a result (defaults to the last value)')
+    summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
+    ident_mx = summary_parser.add_mutually_exclusive_group()
+    ident_mx.add_argument('--id', type=str, help='Show summary for the result with this id')
+    ident_mx.add_argument('--index', type=int, help='Show the nth most recent value', default=0)
+
+    parsers.add_parser('list', help='List the things that we have scores for')
+    return PARSER
+
+
+def main():
+    if '--test' in sys.argv[1:]:
+        sys.argv.remove('--test')
+        unittest.main()
+    else:
+        options = build_parser().parse_args(sys.argv[1:])
+        if options.debug:
+            logging.basicConfig(level=logging.DEBUG)
+
+
+        LOGGER.debug('Running')
+        result = run(options, sys.stdin)
+        LOGGER.debug('Finished running')
+
+        if result is not None:
+            formatted = unicode(result).encode('utf8')
+            print(formatted)
+
+def read_json(filename):
+    if os.path.exists(filename):
+        with open(filename) as stream:
+            return json.loads(stream.read())
+    else:
+        return dict(version=1)
+
+@contextlib.contextmanager
+def with_json_data(data_file):
+    "Read from a json file, write back to it when we are finished"
+    with fasteners.InterProcessLock(data_file + '.lck'):
+        json_data = read_json(data_file)
+
+        yield json_data
+
+        output_data = json.dumps(json_data)
+        with open(data_file, 'w') as stream:
+            stream.write(output_data)
+
+@contextlib.contextmanager
+def with_jsdb_data(data_file):
+    LOGGER.debug('Opening db')
+    db = jsdb.Jsdb(data_file, storage_class=jsdb.leveldict.LevelDict)
+    LOGGER.debug('Db open')
+    with db:
+        try:
+            yield db
+        except:
+            db.rollback()
+            raise
+        else:
+            LOGGER.debug('Committing')
+            db.commit()
+            LOGGER.debug('Committed')
+
+with_data = with_jsdb_data
+
+DATA_VERSION = 1
+
+def run(options, stdin):
+    if not os.path.isdir(options.config_dir):
+        os.mkdir(options.config_dir)
+
+    if options.command == 'daemon':
+        return ipc.run_server(build_parser(), lambda more_options: run(more_options, stdin))
+
+    data_file = os.path.join(options.config_dir, 'data.jsdb')
+
+    with with_data(data_file) as data:
+        # new_data = migrate_data(data, DATA_VERSION)
+        # data.clear()
+        # data.update(**new_data)
+        if options.command == 'list':
+            metric_names = sorted(data.get('metrics', dict()))
+            return '\n'.join(metric_names)
+        elif options.command == 'log':
+            return store.log_action(data, options)
+        elif options.command == 'delete-record':
+            return store.log_action(data, options, delete=True)
+        elif options.command == 'delete':
+            metrics = data.get('metrics', dict())
+            metrics.pop(options.metric)
+            return ''
+        elif options.command == 'move':
+            metrics = data.get('metrics', dict())
+            metrics[options.new_name] = metrics[options.old_name]
+            del metrics[options.old_name]
+            return ''
+        elif options.command == 'backup':
+            return backup(data)
+        elif options.command == 'restore':
+            restore(data, stdin.read())
+            return ''
+        elif options.command == 'records':
+            if options.days_ago is not None:
+                start, end = store.days_ago_bounds(options.days_ago)
+            else:
+                start = end = None
+            return records(data, options.json, options.regex, start=start, end=end)
+
+        metric_data = config.get_metric_data(data, options.metric)
+        if options.command == 'store':
+            return store.store(metric_data, options.value)
+        elif options.command == 'store-csv':
+            return store.store_csv(metric_data, stdin.read())
+        elif options.command == 'update':
+            return store.update(metric_data, options.value, options.id)
+        elif options.command == 'best':
+            return statistics.best(metric_data)
+        elif options.command == 'mean':
+            return statistics.mean(metric_data)
+        elif options.command == 'run-length':
+            return statistics.run_length(metric_data)
+        elif options.command == 'summary':
+            return statistics.summary(metric_data, options.update, ident=options.id, index=options.index)
+        elif options.command == 'config':
+            return config.config(
+                metric_data,
+                options.ident_type,
+                options.ident_period)
+        elif options.command == 'command-update':
+            store.command_update(metric_data, command=options.update_command, refresh=options.refresh, first_id=options.first_id)
+        else:
+            raise ValueError(options.command)
+
+def backup(data):
+    data = jsdb.python_copy.copy(data)
+    data['version'] = DATA_VERSION
+    backup_string = json.dumps(data)
+    return backup_string
+
+def restore(data, backup_filename):
+    data.clear()
+    backup_data = json.loads(backup_filename)
+    data.update(**backup_data)
+
+def records(data, json_output, regex, start=None, end=None):
+    result = {}
+    for metric_name, metric in data['metrics'].items():
+        if regex is not None:
+            if not regex.search(metric_name):
+                continue
+
+        sort_key = lambda v: (v['value'], -v['time'])
+        record_entry = max(metric['values'], key=sort_key)
+        previous_entries = list(v for v in metric['values'] if v['time'] < record_entry['time'])
+        beaten_entry = max(previous_entries, key=sort_key) if previous_entries else None
+
+        if start and record_entry['time'] < start:
+            continue
+
+        if end and record_entry['time'] >= end:
+            continue
+
+        if beaten_entry:
+            improvement = record_entry['value'] - beaten_entry['value']
+        else:
+            improvement = None
+
+        result[metric_name] = dict(value=record_entry['value'], time=record_entry['time'], improvement=improvement)
+
+    if not json_output:
+        output = []
+        for key in sorted(result.keys()):
+            output.append('{} {} {} {}'.format(key, result[key]['value'], improvement, datetime.datetime.fromtimestamp(result[key]['time']).isoformat()))
+        return '\n'.join(output)
+    else:
+        return json.dumps(dict(records=result))
