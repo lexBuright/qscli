@@ -148,8 +148,9 @@ def main():
         result = run(options, sys.stdin)
         LOGGER.debug('Finished running')
 
-        formatted = unicode(result).encode('utf8')
-        print(formatted)
+        if result is not None:
+            formatted = unicode(result).encode('utf8')
+            print(formatted)
 
 def read_json(filename):
     if os.path.exists(filename):
