@@ -172,7 +172,9 @@ def with_json_data(data_file):
 
 @contextlib.contextmanager
 def with_jsdb_data(data_file):
+    LOGGER.debug('Opening db')
     db = jsdb.Jsdb(data_file, storage_class=jsdb.leveldict.LevelDict)
+    LOGGER.debug('Db open')
     with db:
         try:
             yield db
