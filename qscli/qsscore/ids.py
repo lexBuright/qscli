@@ -3,11 +3,11 @@
 import datetime
 import itertools
 
-
 def date_series(start, step):
-    # Yes function does nothing
-    #   but the name deserves to exist
-    return itertools.count(start, step)
+    date = start
+    for _ in itertools.count():
+        yield date
+        date += step
 
 def iso_date_series(start, period):
     start_day = datetime.datetime.strptime(start, '%Y-%m-%d')
