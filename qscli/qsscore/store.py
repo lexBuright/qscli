@@ -12,6 +12,7 @@ import time
 import jsdb
 
 from . import config, ids
+from . import parse_utils
 
 LOGGER = logging.getLogger('data')
 
@@ -117,12 +118,12 @@ def log_action(data, options, delete=False):
     else:
         start_time = end_time = None
 
-    entries = find_entries(data, name_regex=options.regex, start_time=start_time, end_time=end_time, indexes=options.index)
+    entries = find_entries(data, name_regex=options.regex, start_time=start_time, end_time=end_time, indexes=options.index, name=options.name)
 
     if delete:
         delete_entries(data, entries)
     else:
-        return log_entries(entries, options.json)
+        return log_entries(entries, options.json, options.output)
 
 def store_csv(metric_data, csv_string):
     entries = list(csv.reader(StringIO.StringIO(csv_string)))
@@ -172,11 +173,17 @@ def days_ago_bounds(days_ago):
 def dt_to_unix(dt):
     return time.mktime(dt.timetuple()) + dt.microsecond * 1.0e-6
 
-def find_entries(data, name_regex, start_time, end_time, indexes):
+def find_entries(data, name_regex, start_time, end_time, indexes, name):
+    if name_regex is not None and name is not None:
+        raise Exception('Cannot use both a name and a regular expression')
+
     data.setdefault('metrics', {})
     entries = []
     for metric_name, metric in data['metrics'].items():
         if name_regex is not None and not name_regex.search(metric_name):
+            continue
+
+        if name is not None and metric_name != name:
             continue
 
         values = []
@@ -236,11 +243,63 @@ def command_update(metric_data, command, refresh, first_id):
         else:
             LOGGER.debug('Already a value for %r', ident)
 
-def log_entries(entries, json_output):
+def log_entries(entries, json_output, output_fields):
+
+    if json_output and output_fields:
+        raise Exception('Cannot output specific fields and json')
+    
     if json_output:
         return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric'], id=entry.get('id')) for entry in entries])
     else:
-        output = []
+        result = []
         for entry in entries:
-            output.append('{} {} {} {}'.format(datetime.datetime.fromtimestamp(entry['time']).isoformat(), entry['metric'], entry.get('id', '-'), entry['value']))
-        return '\n'.join(output)
+            info = dict(
+                time = datetime.datetime.fromtimestamp(entry['time']).isoformat(),
+                metric = entry['metric'],
+                ident = entry.get('id', '-'),
+                value = entry['value'],
+            )
+            result.append(' '.join(str(info[field]) for field in output_fields))
+
+        return '\n'.join(result)
+
+def csv_split(string):
+    return [x.strip() for x in string.split(',')]
+
+def add_parsers(parsers):
+    # Parsers for data related commands
+    store_command = parsers.add_parser('store', help='Store a score')
+    store_command.add_argument('metric', type=str)
+    store_command.add_argument('value', type=float)
+
+    store_csv_command = parsers.add_parser('store-csv', help='Read a csv of id-value pairs and store/update them')
+    store_csv_command.add_argument('metric', type=str)
+
+    log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
+    log_command.add_argument('--output', '-o', help='csv of fields to output', type=csv_split, default='time,metric,ident,value')
+    def log_command_option(command):
+        name_group = command.add_mutually_exclusive_group()
+        parse_utils.regexp_option(name_group)
+        name_group.add_argument('name', type=str, help='Name of metric', nargs='?')
+
+        log_date = command.add_mutually_exclusive_group()
+        log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
+        log_date.add_argument('--since', type=parse_utils.fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
+        command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+        command.add_argument('--index', action='append', type=int, help='Only delete these indexes')
+    log_command_option(log_command)
+
+    delete_record_command = parsers.add_parser('delete-record', help='Delete recorded scores (arguments as for log)')
+    log_command_option(delete_record_command)
+
+    update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
+    update_command.add_argument('metric', type=str)
+    update_command.add_argument('value', type=float)
+    update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
+
+    command_update_p = parsers.add_parser('command-update', help='If an --id-type is specified then update values by running an external command with ID as an argument')
+    command_update_p.add_argument('metric', type=str)
+    command_update_p.add_argument('update_command', nargs='+', type=str, help='Command to run')
+    command_update_p.add_argument('--refresh', action='store_true', default=False, help='Update pre-existing values')
+    command_update_p.add_argument('--first-id', type=str, help='Start updating at this id. Defaults to minimum stored id')
+

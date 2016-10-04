@@ -57,7 +57,3 @@ ID_SERIES = {
     'isodate': iso_date_series,
     'isominute': iso_minutes_series,
 }
-
-
-
-

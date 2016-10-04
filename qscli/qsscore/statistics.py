@@ -1,3 +1,5 @@
+"Functions that perform summary statistics on data"
+
 import itertools
 import logging
 

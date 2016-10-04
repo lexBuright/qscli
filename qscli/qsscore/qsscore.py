@@ -28,6 +28,7 @@ from ..symbol import Symbol
 from . import store
 from . import config
 from . import statistics
+from . import parse_utils
 
 LOGGER = logging.getLogger()
 
@@ -35,28 +36,11 @@ UNKNOWN = Symbol('unknown')
 
 DATA_DIR = os.path.join(os.environ['HOME'], '.config', 'qsscore')
 
-def regexp_option(parser):
-    parser.add_argument('--regex', '-x', type=re.compile, help='Only return entries whose metric name match this regexp')
 
 def days_ago_option(parser):
     parser.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
 
 UNIT_SIZE = {'h': datetime.timedelta(seconds=3600), 'm': datetime.timedelta(seconds=60), 's': datetime.timedelta(seconds=1), 'd': datetime.timedelta(days=1)}
-
-def fuzzy_date(string):
-    m = re.search(r'^(\d+)([mhsd])$', string)
-    if m:
-        count, unit = m.groups()
-        if unit == 'd':
-            round_now = datetime.datetime.now().replace(hour=0, second=0, microsecond=0)
-        else:
-            round_now = datetime.datetime.now()
-        return round_now - int(count) * UNIT_SIZE[unit]
-    elif re.search(r'^\d\d\d\d-\d\d-\d\d$', string):
-        return datetime.datetime.strptime(string, '%Y-%m-%d').replace(hour=0, second=0, microsecond=0)
-    else:
-        # Ugg, ignore timezones
-        return datetime.datetime.strptime(string, '%Y-%m-%dT%H:%M:%S')
 
 def build_parser():
     PARSER = argparse.ArgumentParser(description=__doc__)
@@ -65,38 +49,14 @@ def build_parser():
     PARSER.add_argument('--config-dir', '-d', default=DATA_DIR, help='Read and store data in this directory')
     parsers = PARSER.add_subparsers(dest='command')
 
-    store_command = parsers.add_parser('store', help='Store a score')
-    store_command.add_argument('metric', type=str)
-    store_command.add_argument('value', type=float)
-
-    store_csv_command = parsers.add_parser('store-csv', help='Read a csv of id-value pairs and store/update them')
-    store_csv_command.add_argument('metric', type=str)
+    store.add_parsers(parsers)
 
     parsers.add_parser('daemon', help='Run a daemon')
-
-    log_command = parsers.add_parser('log', help='Show all the scores for a period of time')
-    def log_command_option(command):
-        regexp_option(command)
-        log_date = command.add_mutually_exclusive_group()
-        log_date.add_argument('--days-ago', '-A', type=int, help='Returns scores recorded this many days ago')
-        log_date.add_argument('--since', type=fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
-        command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
-        command.add_argument('--index', action='append', type=int, help='Only delete these indexes')
-
-    log_command_option(log_command)
-
-    delete_record_command = parsers.add_parser('delete-record', help='Delete recorded scores (arguments as for log)')
-    log_command_option(delete_record_command)
-
-    update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
-    update_command.add_argument('metric', type=str)
-    update_command.add_argument('value', type=float)
-    update_command.add_argument('--id', type=str, help='Update the score with this id (or create a value)')
 
     records_command = parsers.add_parser('records', help='Display when records were obtained')
     records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
     days_ago_option(records_command)
-    regexp_option(records_command)
+    parse_utils.regexp_option(records_command)
 
     delete_command = parsers.add_parser('delete', help='Delete a metric')
     delete_command.add_argument('metric', type=str)
@@ -112,12 +72,6 @@ def build_parser():
     config_command.add_argument('--id-type', type=str, choices=('isodate', 'isohour', 'isominute'), help='Automatically create IDs. iosdate means ids of the form YYYY-MM-DD every number of days, isohour and isominute means ids taking the form of timestamps', dest='ident_type')
     config_command.add_argument('--id-period', type=int, help='How many id-type units per reading', dest='ident_period')
     config_command.add_argument('metric', type=str)
-
-    command_update_p = parsers.add_parser('command-update', help='If an --id-type is specified then update values by running an external command with ID as an argument')
-    command_update_p.add_argument('metric', type=str)
-    command_update_p.add_argument('update_command', nargs='+', type=str, help='Command to run')
-    command_update_p.add_argument('--refresh', action='store_true', default=False, help='Update pre-existing values')
-    command_update_p.add_argument('--first-id', type=str, help='Start updating at this id. Defaults to minimum stored id')
 
     def metric_command(p, name, help_string=''):
         command = p.add_parser(name, help=help_string)
