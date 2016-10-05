@@ -8,6 +8,7 @@ qstimeseries append stringseries --string "this is a string value"
 """
 
 import argparse
+import collections
 import datetime
 import json
 import logging
@@ -50,9 +51,7 @@ def append(db, series, value_string, value_type, ident):
     cursor.execute('INSERT INTO timeseries(series, {}, given_ident) values (?, ?, ?)'.format(value_field), (series, value, ident))
     db.commit()
 
-def show(db, series, ident, json_output):
-    cursor = db.cursor()
-
+def get_values(db, series, ident=None):
     query_options = []
     wheres = []
     if series:
@@ -71,16 +70,26 @@ def show(db, series, ident, json_output):
     else:
         query = '{} {}'.format(query1, query2)
 
+    cursor = db.cursor()
     cursor.execute(query, query_options)
+    return cursor.fetchall()
+
+
+def show(db, series, ident, json_output):
+    records = get_values(db, series, ident=ident)
     if not json_output:
         result = []
-        for time_string, series, ident, value in cursor.fetchall():
+        for time_string, series, ident, value in records:
+
+            if isinstance(value, (str, unicode)):
+                value = value.strip('\n')
+
             dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
             result.append('{} {} {} {}'.format(dt.isoformat(), ident, series, value))
         return '\n'.join(result)
     else:
         result = []
-        for time_string, series, ident, value in cursor.fetchall():
+        for time_string, series, ident, value in records:
             dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
             unix_time = time.mktime(dt.timetuple())
             result.append(dict(time=unix_time, series=series, id=ident, value=value))
@@ -98,6 +107,30 @@ append_command.add_argument('series', type=str, help='Timeseries')
 append_command.add_argument('--string', action='store_const', dest='value_type', const=str, default=float)
 append_command.add_argument('--id', type=str, help='Name a value', dest='ident')
 append_command.add_argument('value', type=str)
+
+PERIODS = {
+    'm': datetime.timedelta(minutes=1),
+    'h': datetime.timedelta(hours=1),
+    'd': datetime.timedelta(days=1),
+}
+
+def mean(lst):
+    return float(sum(lst)) /  len(lst)
+
+AGGREGATION_FUNCTIONS = {
+    'min': min,
+    'max': max,
+    'mean': mean,
+}
+
+def time_period(string):
+    time_string, unit = string[:-1], string[-1]
+    return int(time_string) * PERIODS[unit]
+
+aggregate_command = parsers.add_parser('aggregate', help='Combine together values over different periods')
+aggregate_command.add_argument('period', type=time_period, help='Aggregate values over this period')
+aggregate_command.add_argument('--series', type=str, help='Only display this series')
+aggregate_command.add_argument('--func', '-f', type=str, help='Function to use for aggregation', default='min', choices=AGGREGATION_FUNCTIONS)
 
 show_command = parsers.add_parser('show', help='Show the values in a series')
 show_command.add_argument('--series', type=str, help='Only show this timeseries')
@@ -126,10 +159,35 @@ def main():
         append(db, options.series, options.value, options.value_type, options.ident)
     elif options.command == 'show':
         print show(db, options.series, options.ident, options.json)
+    elif options.command == 'aggregate':
+        aggregate(db, options.series, options.period)
     elif options.command == 'delete':
         delete(db, options.series, options.ident)
     else:
         raise ValueError(options.command)
+
+epoch = datetime.datetime(1970, 1, 1)
+def aggregate(db, series, period):
+    for dt, series, value in aggregate_values(db, series, period, max):
+        value = value.strip('\n') if isinstance(value, (str, unicode)) else value
+        print dt, series, value
+
+def aggregate_values(db, series, period, agg_func):
+    # Could be done in sql but this would
+    #   be less generalisable
+    group_dt = None
+    group_values = collections.defaultdict(list)
+    for time_string, series, ident, value in get_values(db, series):
+        dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+        seconds_since_epoch = (dt - epoch).total_seconds() // period.total_seconds() * period.total_seconds()
+        period_dt = epoch + datetime.timedelta(seconds=seconds_since_epoch)
+        if period_dt != group_dt:
+            group_dt = period_dt
+            for series in sorted(group_values):
+                yield group_dt, series, agg_func(group_values[series])
+            group_values = collections.defaultdict(list)
+
+        group_values[series].append(value)
 
 def delete(db, series, ident):
     cursor = db.cursor()
