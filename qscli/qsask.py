@@ -59,6 +59,9 @@ show.add_argument('name', type=str)
 
 log = parsers.add_parser('log', help='Show timeseries of record questions')
 
+timeseries = parsers.add_parser('timeseries', help='Run a timeseries command (see qstimeseries)')
+timeseries.add_argument('timeseries_command', nargs='*', help='Arguments')
+
 daemon = parsers.add_parser('daemon', help='Process that asks questions')
 daemon.add_argument('--dry-run', '-n', action='store_true', help='Print out actions rather than carrying them out')
 daemon.add_argument('--multiplier', '-m', type=float, help='Ask questions more quickly', default=1.0)
@@ -90,23 +93,23 @@ def main():
             sys.stdout.write(result)
             sys.stdout.flush()
 
-def backticks(command, stdin=None, shell=False):
+def backticks(command, stdin=None, shell=False, allow_error=False):
     stdin = subprocess.PIPE if stdin is not None else None
 
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stdin=stdin, shell=shell)
     result, _ = process.communicate(stdin)
-    if process.returncode != 0:
+    if not allow_error and process.returncode != 0:
         raise Exception('{!r} returned non-zero return code {!r}'.format(command, process.returncode))
     return result
 
-def timeseries_run(data_dir, command):
+def timeseries_run(data_dir, command, allow_error=False):
     # Where possible use pre-existing or general
     #   command line tools.
     direc = os.path.join(data_dir, 'timeseries')
     if not os.path.isdir(direc):
         os.mkdir(direc)
 
-    return backticks(['qstimeseries', '--config-dir', direc] + command)
+    return backticks(['qstimeseries', '--config-dir', direc] + command, allow_error=allow_error)
 
 def log(data_dir):
     return timeseries_run(data_dir, ['show'])
@@ -142,6 +145,8 @@ def run(args):
             return show_question(data, options.name)
         elif options.command == 'log':
             return log(options.config_dir)
+        elif options.command == 'timeseries':
+            return timeseries_run(options.config_dir, options.timeseries_command, allow_error=True)
         elif options.command == 'list':
             return list_questions(data)
         elif options.command == 'delete':
