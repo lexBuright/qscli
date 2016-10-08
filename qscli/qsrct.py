@@ -7,10 +7,12 @@ qsrct assign jumping # assign the choice for an experiment
 qsrct result jumping 1.9 # score the result for the assignment
 qsrct test jumping # runs an appropriate test on the experiment
 
+
 qsrct assign jumping --id ID # Get an assignment for id id
-qsrct assign jumping --every 1d # return a new assignment every day
-qsrct assign jumping --every 1h # return a new assignment every hour
-qsrct assign jumping --every 10m # return a new assignment every ten minutes
+
+# Only assign once per day, thereafter return the same
+#    result
+qsrct new daily-experiment --assign-period '1d'
 
 # Run a test with an external source of data
 #  Data should consist of a csv of _ID,value_ or _timestamp,value_ as appropriate
