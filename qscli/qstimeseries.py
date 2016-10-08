@@ -127,10 +127,24 @@ def time_period(string):
     time_string, unit = string[:-1], string[-1]
     return int(time_string) * PERIODS[unit]
 
+def get_agg_func(string):
+    return AGGREGATION_FUNCTIONS[string]
+
 aggregate_command = parsers.add_parser('aggregate', help='Combine together values over different periods')
 aggregate_command.add_argument('period', type=time_period, help='Aggregate values over this period')
 aggregate_command.add_argument('--series', type=str, help='Only display this series')
-aggregate_command.add_argument('--func', '-f', type=str, help='Function to use for aggregation', default='min', choices=AGGREGATION_FUNCTIONS)
+aggregate_command.add_argument(
+    '--func', '-f',
+    help='Function to use for aggregation',
+    type=str,
+    default='min',
+    choices=tuple(AGGREGATION_FUNCTIONS),
+    )
+aggregate_command.add_argument('--missing-value', '-v', type=float, help='Value to fill in gaps with')
+aggregate_command.add_argument('--missing', '-m', action='store_true', help='Include missing values')
+
+format_mutex = aggregate_command.add_mutually_exclusive_group()
+format_mutex.add_argument('--record-stream', '-R', action='store_true', help='entries are written separately json on one line')
 
 show_command = parsers.add_parser('show', help='Show the values in a series')
 show_command.add_argument('--series', type=str, help='Only show this timeseries')
@@ -160,21 +174,32 @@ def main():
     elif options.command == 'show':
         print show(db, options.series, options.ident, options.json)
     elif options.command == 'aggregate':
-        aggregate(db, options.series, options.period)
+        aggregate(
+            db, options.series, options.period, options.record_stream,
+            func=get_agg_func(options.func),
+            missing_value=options.missing_value,
+            include_missing=options.missing)
     elif options.command == 'delete':
         delete(db, options.series, options.ident)
     else:
         raise ValueError(options.command)
 
 epoch = datetime.datetime(1970, 1, 1)
-def aggregate(db, series, period):
-    for dt, series, value in aggregate_values(db, series, period, max):
+def aggregate(db, series, period, record_stream, missing_value, include_missing, func):
+    for dt, series, value in aggregate_values(db, series, period, func, include_empty=include_missing):
         value = value.strip('\n') if isinstance(value, (str, unicode)) else value
-        print dt, series, value
+        value = value if value is not None else missing_value
+        dt_time = time.mktime(dt.timetuple())
+        if record_stream:
+            print json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
+        else:
+            print dt, series, value
 
-def aggregate_values(db, series, period, agg_func):
+def aggregate_values(db, series, period, agg_func, include_empty=False):
     # Could be done in sql but this would
     #   be less generalisable
+
+    all_series = get_series(db)
     group_dt = None
     group_values = collections.defaultdict(list)
     for time_string, series, ident, value in get_values(db, series):
@@ -182,12 +207,34 @@ def aggregate_values(db, series, period, agg_func):
         seconds_since_epoch = (dt - epoch).total_seconds() // period.total_seconds() * period.total_seconds()
         period_dt = epoch + datetime.timedelta(seconds=seconds_since_epoch)
         if period_dt != group_dt:
-            group_dt = period_dt
+            LOGGER.debug('Group values %r %r', period_dt, group_values)
             for series in sorted(group_values):
                 yield group_dt, series, agg_func(group_values[series])
             group_values = collections.defaultdict(list)
 
+            if include_empty:
+                while True:
+                    if group_dt is None:
+                        break
+
+                    group_dt += period
+                    if group_dt >= period_dt:
+                        break
+
+                    for value_series in all_series:
+                        if series is None or series == value_series:
+                            yield group_dt, series, None
+
+            group_dt = period_dt
+
         group_values[series].append(value)
+
+def get_series(db):
+    cursor = db.cursor()
+    cursor.execute('''
+    SELECT DISTINCT series FROM timeseries ORDER BY 1;
+    ''')
+    return [x for (x,) in cursor.fetchall()]
 
 def delete(db, series, ident):
     cursor = db.cursor()
