@@ -117,11 +117,16 @@ PERIODS = {
 def mean(lst):
     return float(sum(lst)) /  len(lst)
 
+def rng(lst):
+    return max(lst) - min(lst)
+
 AGGREGATION_FUNCTIONS = {
     'min': min,
     'max': max,
     'mean': mean,
+    'rng': rng
 }
+
 
 def time_period(string):
     time_string, unit = string[:-1], string[-1]
