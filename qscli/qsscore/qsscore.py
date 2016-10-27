@@ -202,9 +202,13 @@ def restore(data, backup_filename):
 def records(data, json_output, regex, start=None, end=None):
     result = {}
     for metric_name, metric in data['metrics'].items():
+
         if regex is not None:
             if not regex.search(metric_name):
                 continue
+
+        if not metric['values']:
+            continue
 
         sort_key = lambda v: (v['value'], -v['time'])
         record_entry = max(metric['values'], key=sort_key)
