@@ -40,14 +40,11 @@ import logging
 import math
 import os
 import random
-import shutil
 import StringIO
 import subprocess
 import sys
-import tempfile
 import threading
 import time
-import unittest
 
 import fasteners
 
@@ -61,20 +58,6 @@ def run(qsrct, argv):
     options = build_parser().parse_args(argv)
     return qsrct.run(options)
 
-class FakeRandom(object):
-    def __init__(self):
-        self.destined_values = []
-
-    def destine(self, value):
-        self.destined_values.append(value)
-
-    def choice(self, values):
-        destined_value = self.destined_values[0]
-        if destined_value not in values:
-            raise Exception('{!r} not in {!r}'.format(destined_value, values))
-
-        return self.destined_values.pop(0)
-
 Result = collections.namedtuple('Result', 'returncode output')
 
 
@@ -82,23 +65,19 @@ def main():
     if '--debug' in sys.argv:
         logging.basicConfig(level=logging.DEBUG)
 
-    if '--test' in sys.argv:
-        sys.argv.remove('--test')
-        unittest.main()
-    else:
-        # Double-parse to get config_dir
-        #    while using run for testing
-        options = build_parser().parse_args()
-        result = (run(QsRct(random, options.config_dir), sys.argv[1:]))
+    # Double-parse to get config_dir
+    #    while using run for testing
+    options = build_parser().parse_args()
+    result = (run(QsRct(random, options.config_dir), sys.argv[1:]))
 
-        if not isinstance(result, Result):
-            result = Result(output=result, returncode=0)
+    if not isinstance(result, Result):
+        result = Result(output=result, returncode=0)
 
-        if result.output:
-            sys.stdout.write(result.output)
-            sys.stdout.write('\n')
-            sys.stdout.flush()
-        sys.exit(result.returncode)
+    if result.output:
+        sys.stdout.write(result.output)
+        sys.stdout.write('\n')
+        sys.stdout.flush()
+    sys.exit(result.returncode)
 
 class QsRct(object):
     def __init__(self, random, config_dir):
@@ -306,7 +285,7 @@ class QsRct(object):
         with self._with_experiment_data(name) as experiment_data:
             result.append('options: ' + ' '.join(sorted(experiment_data['options'])))
             result.append('description: ' + experiment_data['description'])
-            result.append('data_source:' + experiment_data['data_source'])
+            result.append('data_source:' + (experiment_data['data_source'] or ''))
 
         return '\n'.join(result)
 
@@ -349,85 +328,6 @@ def with_data(data_file):
             output = json.dumps(data)
             with open(data_file, 'w') as stream:
                 stream.write(output)
-
-
-class TestQsrct(unittest.TestCase):
-    def setUp(self):
-        self.direc = tempfile.mkdtemp()
-        self.random = FakeRandom()
-        self.qsrct = QsRct(self.random, self.direc)
-
-    def tearDown(self):
-        shutil.rmtree(self.direc)
-
-    def run_cli(self, args):
-        new_args = tuple(args) + ('--config-dir', self.direc)
-        return run(self.qsrct, args)
-
-    def destine(self, value):
-        # Tester does not play dice
-        self.random.destine(value)
-
-    def test_assign(self):
-        self.run_cli(['new', 'experiment', '--options', 'good,bad'])
-        self.destine('good')
-        self.run_cli(['assign', 'experiment'])
-
-        self.destine('bad')
-        self.run_cli(['assign', 'experiment'])
-
-        lines = self.run_cli(['assignments', 'experiment']).splitlines()
-        self.assertTrue('good' in lines[0])
-        self.assertTrue('bad' in lines[1])
-
-    def test_trials(self):
-        self.run_cli(['new', 'test', '--options', 'good,bad'])
-        result = self.run_cli(['trials'])
-        self.assertEquals(result, 'test')
-
-    def test_delete(self):
-        self.run_cli(['new', 'test', '--options', 'good,bad'])
-        self.run_cli(['delete', 'test'])
-        result = self.run_cli(['trials'])
-        self.assertEquals(result, '')
-
-    def test_show(self):
-        self.run_cli(['new', 'boring-test'])
-
-        self.run_cli(['new', 'test', '--options', 'good,bad'])
-        result = self.run_cli(['show', 'test'])
-        self.assertTrue('options: bad good' in result, result)
-
-        result = self.run_cli(['show', 'boring-test'])
-        self.assertTrue('options:' in result, result)
-
-    def test_edit(self):
-        self.run_cli(['new', 'test'])
-        self.run_cli(['edit', 'test', '--description', 'some testing'])
-        result = self.run_cli(['show', 'test'])
-        self.assertTrue('description: some testing' in result, result)
-
-    def test_basic(self):
-        self.run_cli(['new', 'test', '--options', 'good,bad'])
-
-        self.destine('good')
-        self.run_cli(['assign', 'test'])
-
-        while True:
-            print blah
-
-        self.run_cli(['result', 'test', '1'])
-
-        self.destine('good')
-        self.run_cli(['assign', 'test'])
-        self.run_cli(['result', 'test', '2'])
-
-        self.destine('bad')
-        self.run_cli(['assign', 'test'])
-        self.run_cli(['result', 'test', '-10000000000000'])
-
-        print self.run_cli(['test', 'test']) # Two sample t-test
-
 
 def build_parser():
     parser = argparse.ArgumentParser(description='Convenience tool to run randomized controlled trial ')
@@ -487,7 +387,6 @@ def parse_period(string):
     unit = string[-1]
     number = int(string[:-1])
     return number * UNITS[unit]
-
 
 
 if __name__ == '__main__':
