@@ -16,13 +16,10 @@ import json
 import logging
 import os
 import random
-import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 import time
-import unittest
 
 import fasteners
 
@@ -35,7 +32,6 @@ PARSER.add_argument('--config-dir', '-C', type=str, help='', default=DEFAULT_CON
 PARSER.add_argument('--debug', action='store_true', help='Include debug output (to stderr)')
 
 parsers = PARSER.add_subparsers(dest='command')
-test = parsers.add_parser('test', help='Run the tests')
 
 def space_dsv(string):
     return string.split()
@@ -82,16 +78,10 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if args.command == 'test':
-        sys.argv.remove('test')
-        if '--debug' in sys.argv:
-            sys.argv.remove('--debug')
-        unittest.main()
-    else:
-        result = run(sys.argv[1:])
-        if result is not None:
-            sys.stdout.write(result)
-            sys.stdout.flush()
+    result = run(sys.argv[1:])
+    if result is not None:
+        sys.stdout.write(result)
+        sys.stdout.flush()
 
 def backticks(command, stdin=None, shell=False, allow_error=False):
     stdin = subprocess.PIPE if stdin is not None else None
@@ -287,41 +277,6 @@ class FakePrompter(object):
 
     def float_prompt(self, prompt):
         return 17.0
-
-# This is difficult to test, and I feel as if the
-#   code would turn into inside out reimplementation
-#   asyncrhonous glueness
-
-# Stick to unit tests
-class TestAsk(unittest.TestCase):
-    def setUp(self):
-        self.direc = tempfile.mkdtemp()
-
-    def tearDown(self):
-        shutil.rmtree(self.direc)
-
-    def run_cli(self, args):
-        new_args = ('--config-dir', self.direc) + tuple(args)
-        return run(new_args)
-
-    def test_basic(self):
-        self.run_cli(['new', 'test'])
-        self.run_cli(['new', 'test2', '--period', '100'])
-
-        result = self.run_cli(['list'])
-        self.assertTrue('test\n' in result or 'test ' in result, result)
-        self.assertTrue('test2\n' in result or 'test ' in result, result)
-
-        self.run_cli(['delete', 'test2'])
-        result = self.run_cli(['list'])
-        self.assertTrue('test\n' in result or 'test ' in result, result)
-        self.assertFalse('test2\n' in result or 'test2 ' in result, result)
-
-    def test_prompt(self):
-        self.run_cli(['new', 'test', '--prompt', 'This is a test'])
-        result = self.run_cli(['show', 'test'])
-        self.assertTrue('This is a test' in result, result)
-
 
 
 def read_json(filename):

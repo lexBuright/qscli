@@ -46,3 +46,15 @@ The key differentiators of this tool compared to similar web- or phone-based equ
 - Proper access to an open source community. There *is* an open source community for phone apps (e.g. Fdroid), but it is not nearly as developed as the community for more general-purpose operating systems. Whenever creating an open source tool there is a degree of throwing a great deal of your time and effort into the ether. There is a certain risk that no one will use your code and it will merely be forgotten. This risk (and the amount of effort involved) is reduced by creating desktop tools.
 
 The cost of these differences is a massively reduced user base, and having to use a real non-phone computer when exercising.  However,  one hopes that this is at least a *useful* and unique tool for a specific subset of the population.
+
+
+# Development
+
+To test:
+
+```
+pip install -e .[test]
+python setup.py test
+```
+
+You might prefer to use a virtualenv.

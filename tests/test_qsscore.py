@@ -4,13 +4,15 @@ import StringIO
 import tempfile
 import unittest
 
-from .qsscore import run
+from qscli.qsscore.qsscore import run, build_parser
 
 class TestCli(unittest.TestCase):
     def cli(self, command, input_data=''):
         stdin = StringIO.StringIO(input_data)
+        args = ['--config-dir', self._config_dir] + command
+        options = build_parser().parse_args(args)
         try:
-            return str(run(['--config-dir', self._config_dir] + command, stdin))
+            return str(run(options, stdin))
         except SystemExit:
             raise Exception('Exitted out')
 
@@ -45,7 +47,7 @@ class TestCli(unittest.TestCase):
         self.cli(['delete', 'first-metric'])
 
         second_list = self.cli(['list'])
-        self.assertFalse('first-metric' in second_list)
+        self.assertFalse('first-metric' not in second_list)
         self.assertTrue('other-metric' in second_list)
 
     def test_move(self):
@@ -64,14 +66,14 @@ class TestCli(unittest.TestCase):
         backup_string = self.cli(['backup'])
 
         for filename in os.listdir(self._config_dir):
-            os.unlink(os.path.join(self._config_dir, filename))
+            shutil.rmtree(os.path.join(self._config_dir, filename))
 
         self.assertEqual(self.cli(['list']), '')
 
         for filename in os.listdir(self._config_dir):
-            os.unlink(os.path.join(self._config_dir, filename))
+            shutil.rmtree(os.path.join(self._config_dir, filename))
 
-        self.cli(['restore'], input=backup_string)
+        self.cli(['restore'], input_data=backup_string)
 
         lst = self.cli(['list'])
         self.assertTrue('other-metric' in lst)
@@ -80,7 +82,7 @@ class TestCli(unittest.TestCase):
     def test_backup_compatible(self):
         BACKUP_STRING = '{"metrics": {"first-metric": {"values": [{"time": 1470877073.3021483, "value": 1.0}]}, "other-metric": {"values": [{"time": 1470877073.302729, "value": 2.0}]}}, "version": 1}'
 
-        self.cli(['restore'], input=BACKUP_STRING)
+        self.cli(['restore'], input_data=BACKUP_STRING)
         lst = self.cli(['list'])
         self.assertTrue('other-metric' in lst)
         self.assertTrue('first-metric' in lst)

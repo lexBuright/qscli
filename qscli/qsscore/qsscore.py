@@ -12,9 +12,7 @@ import datetime
 import json
 import logging
 import os
-import re
 import sys
-import unittest
 
 import fasteners
 
@@ -93,22 +91,18 @@ def build_parser():
 
 
 def main():
-    if '--test' in sys.argv[1:]:
-        sys.argv.remove('--test')
-        unittest.main()
-    else:
-        options = build_parser().parse_args(sys.argv[1:])
-        if options.debug:
-            logging.basicConfig(level=logging.DEBUG)
+    options = build_parser().parse_args(sys.argv[1:])
+    if options.debug:
+        logging.basicConfig(level=logging.DEBUG)
 
 
-        LOGGER.debug('Running')
-        result = run(options, sys.stdin)
-        LOGGER.debug('Finished running')
+    LOGGER.debug('Running')
+    result = run(options, sys.stdin)
+    LOGGER.debug('Finished running')
 
-        if result is not None:
-            formatted = unicode(result).encode('utf8')
-            print(formatted)
+    if result is not None:
+        formatted = unicode(result).encode('utf8')
+        print(formatted)
 
 def read_json(filename):
     if os.path.exists(filename):
