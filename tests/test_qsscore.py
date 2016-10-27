@@ -59,6 +59,46 @@ class TestCli(unittest.TestCase):
         self.assertTrue('second-metric' in lst)
         self.assertEqual(self.cli(['best', 'second-metric']), '2.0')
 
+    def test_log(self):
+        self.cli(['store', 'first-metric', '1'])
+        self.cli(['store', 'first-metric', '2'])
+        self.cli(['store', 'second-metric', '3'])
+
+        log_lines = self.cli(['log']).splitlines()
+        self.assertTrue('3' in log_lines[-1])
+        self.assertEquals(len(log_lines), 3)
+
+    def test_records(self):
+        self.cli(['store', 'first-metric', '1'])
+        self.cli(['store', 'first-metric', '2'])
+        self.cli(['store', 'second-metric', '3'])
+        lines = self.cli(['records']).splitlines()
+        self.assertEquals(len(lines), 2)
+
+        first_metric_line, = [l for l in lines if 'first-metric' in l]
+        self.assertTrue('2.0' in first_metric_line)
+
+        second_metric_line, = [l for l in lines if 'second-metric' in l]
+        self.assertTrue('3.0' in second_metric_line)
+
+    def test_store_csv(self):
+        self.cli(['store', 'other-metric', '1337'])
+        first_metric_csv = '1,11\n2,12\n'
+        self.cli(['store-csv', 'first-metric'], first_metric_csv)
+        self.assertTrue('12' in self.cli(['records']))
+        self.assertTrue('1337' in self.cli(['records']))
+        self.assertEquals(len(self.cli(['log']).splitlines()), 3)
+
+    def test_store_csv_update(self):
+        self.cli(['update', 'first-metric', '10', '--id', '2'])
+        first_metric_csv = '1,11\n2,12\n'
+        self.cli(['store-csv', 'first-metric'], first_metric_csv)
+
+        # value is replaced
+        self.assertEquals(len(self.cli(['log']).splitlines()), 2)
+        self.assertTrue('12' in self.cli(['records']))
+
+
     def test_backup(self):
         self.cli(['store', 'first-metric', '1'])
         self.cli(['store', 'other-metric', '2'])
