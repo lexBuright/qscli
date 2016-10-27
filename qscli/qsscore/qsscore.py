@@ -14,8 +14,6 @@ import logging
 import os
 import sys
 
-import fasteners
-
 import jsdb
 import jsdb.leveldict
 import jsdb.python_copy
@@ -51,7 +49,7 @@ def build_parser():
 
     parsers.add_parser('daemon', help='Run a daemon')
 
-    records_command = parsers.add_parser('records', help='Display when records were obtained')
+    records_command = parsers.add_parser('records', help='Display when all time bests were obtained')
     records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
     days_ago_option(records_command)
     parse_utils.regexp_option(records_command)
@@ -95,7 +93,6 @@ def main():
     if options.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-
     LOGGER.debug('Running')
     result = run(options, sys.stdin)
     LOGGER.debug('Finished running')
@@ -103,25 +100,6 @@ def main():
     if result is not None:
         formatted = unicode(result).encode('utf8')
         print(formatted)
-
-def read_json(filename):
-    if os.path.exists(filename):
-        with open(filename) as stream:
-            return json.loads(stream.read())
-    else:
-        return dict(version=1)
-
-@contextlib.contextmanager
-def with_json_data(data_file):
-    "Read from a json file, write back to it when we are finished"
-    with fasteners.InterProcessLock(data_file + '.lck'):
-        json_data = read_json(data_file)
-
-        yield json_data
-
-        output_data = json.dumps(json_data)
-        with open(data_file, 'w') as stream:
-            stream.write(output_data)
 
 @contextlib.contextmanager
 def with_jsdb_data(data_file):
@@ -160,9 +138,7 @@ def run(options, stdin):
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
         elif options.command == 'log':
-            return store.log_action(data, options)
-        elif options.command == 'delete-record':
-            return store.log_action(data, options, delete=True)
+            return store.log_action(data, options, delete=options.delete)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
@@ -223,9 +199,13 @@ def restore(data, backup_filename):
 def records(data, json_output, regex, start=None, end=None):
     result = {}
     for metric_name, metric in data['metrics'].items():
+
         if regex is not None:
             if not regex.search(metric_name):
                 continue
+
+        if not metric['values']:
+            continue
 
         sort_key = lambda v: (v['value'], -v['time'])
         record_entry = max(metric['values'], key=sort_key)

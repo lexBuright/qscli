@@ -247,7 +247,7 @@ def log_entries(entries, json_output, output_fields):
 
     if json_output and output_fields:
         raise Exception('Cannot output specific fields and json')
-    
+
     if json_output:
         return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric'], id=entry.get('id')) for entry in entries])
     else:
@@ -287,10 +287,8 @@ def add_parsers(parsers):
         log_date.add_argument('--since', type=parse_utils.fuzzy_date, help='Log results since a given date. (10d for ten days ago, otherwise and iso8601 timestamp or date)')
         command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
         command.add_argument('--index', action='append', type=int, help='Only delete these indexes')
+        command.add_argument('--delete', action='store_true', help='Delete the records found')
     log_command_option(log_command)
-
-    delete_record_command = parsers.add_parser('delete-record', help='Delete recorded scores (arguments as for log)')
-    log_command_option(delete_record_command)
 
     update_command = parsers.add_parser('update', help='Update the last entered score (or the score with a particular id)')
     update_command.add_argument('metric', type=str)
@@ -302,4 +300,3 @@ def add_parsers(parsers):
     command_update_p.add_argument('update_command', nargs='+', type=str, help='Command to run')
     command_update_p.add_argument('--refresh', action='store_true', default=False, help='Update pre-existing values')
     command_update_p.add_argument('--first-id', type=str, help='Start updating at this id. Defaults to minimum stored id')
-
