@@ -14,8 +14,6 @@ import logging
 import os
 import sys
 
-import fasteners
-
 import jsdb
 import jsdb.leveldict
 import jsdb.python_copy
@@ -103,25 +101,6 @@ def main():
     if result is not None:
         formatted = unicode(result).encode('utf8')
         print(formatted)
-
-def read_json(filename):
-    if os.path.exists(filename):
-        with open(filename) as stream:
-            return json.loads(stream.read())
-    else:
-        return dict(version=1)
-
-@contextlib.contextmanager
-def with_json_data(data_file):
-    "Read from a json file, write back to it when we are finished"
-    with fasteners.InterProcessLock(data_file + '.lck'):
-        json_data = read_json(data_file)
-
-        yield json_data
-
-        output_data = json.dumps(json_data)
-        with open(data_file, 'w') as stream:
-            stream.write(output_data)
 
 @contextlib.contextmanager
 def with_jsdb_data(data_file):
