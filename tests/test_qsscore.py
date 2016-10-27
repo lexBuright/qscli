@@ -98,6 +98,14 @@ class TestCli(unittest.TestCase):
         self.assertEquals(len(self.cli(['log']).splitlines()), 2)
         self.assertTrue('12' in self.cli(['records']))
 
+    def test_delete(self):
+        self.cli(['store', 'first-metric', '121'])
+        self.cli(['store', 'first-metric', '131'])
+        self.assertEquals(len(self.cli(['log']).splitlines()), 2)
+        self.cli(['log', '--index', '-1', '--delete'])
+        self.assertEquals(len(self.cli(['log']).splitlines()), 1)
+        self.assertTrue('121' in self.cli(['log']))
+        self.assertTrue('131' not in self.cli(['log']))
 
     def test_backup(self):
         self.cli(['store', 'first-metric', '1'])

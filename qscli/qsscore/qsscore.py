@@ -93,7 +93,6 @@ def main():
     if options.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-
     LOGGER.debug('Running')
     result = run(options, sys.stdin)
     LOGGER.debug('Finished running')
@@ -139,9 +138,7 @@ def run(options, stdin):
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
         elif options.command == 'log':
-            return store.log_action(data, options)
-        elif options.command == 'delete-record':
-            return store.log_action(data, options, delete=True)
+            return store.log_action(data, options, delete=options.delete)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
