@@ -141,8 +141,7 @@ aggregate_command.add_argument('--series', type=str, help='Only display this ser
 aggregate_command.add_argument(
     '--func', '-f',
     help='Function to use for aggregation',
-    type=str,
-    default='min',
+    action='append',
     choices=tuple(AGGREGATION_FUNCTIONS),
     )
 aggregate_command.add_argument('--missing-value', '-v', type=float, help='Value to fill in gaps with')
@@ -181,7 +180,7 @@ def main():
     elif options.command == 'aggregate':
         aggregate(
             db, options.series, options.period, options.record_stream,
-            func=get_agg_func(options.func),
+            funcs=map(get_agg_func, options.func or ['min']),
             missing_value=options.missing_value,
             include_missing=options.missing)
     elif options.command == 'delete':
@@ -190,31 +189,37 @@ def main():
         raise ValueError(options.command)
 
 epoch = datetime.datetime(1970, 1, 1)
-def aggregate(db, series, period, record_stream, missing_value, include_missing, func):
-    for dt, series, value in aggregate_values(db, series, period, func, include_empty=include_missing):
-        value = value.strip('\n') if isinstance(value, (str, unicode)) else value
-        value = value if value is not None else missing_value
+def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs):
+    for row in aggregate_values(db, series, period, funcs, include_empty=include_missing):
+        dt, series = row[:2]
+        values = row[2:]
+        values = [value.strip('\n') if isinstance(value, (str, unicode)) else value for value in values]
+        values = [missing_value if value is None else value for value in values]
         dt_time = time.mktime(dt.timetuple())
         if record_stream:
+            value = values[0] if len(values) == 1 else values
             print json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
         else:
-            print dt, series, value
+            print dt, series,
+            for value in values:
+                print value,
+            print
 
-def aggregate_values(db, series, period, agg_func, include_empty=False):
+def aggregate_values(db, series, period, agg_funcs, include_empty=False):
     # Could be done in sql but this would
     #   be less generalisable
 
     all_series = get_series(db)
     group_dt = None
     group_values = collections.defaultdict(list)
-    for time_string, series, ident, value in get_values(db, series):
+    for time_string, series, _ident, value in get_values(db, series):
         dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
         seconds_since_epoch = (dt - epoch).total_seconds() // period.total_seconds() * period.total_seconds()
         period_dt = epoch + datetime.timedelta(seconds=seconds_since_epoch)
         if period_dt != group_dt:
             LOGGER.debug('Group values %r %r', period_dt, group_values)
             for series in sorted(group_values):
-                yield group_dt, series, agg_func(group_values[series])
+                yield [group_dt, series] + [f(group_values[series]) for f in agg_funcs]
             group_values = collections.defaultdict(list)
 
             if include_empty:
@@ -228,7 +233,7 @@ def aggregate_values(db, series, period, agg_func, include_empty=False):
 
                     for value_series in all_series:
                         if series is None or series == value_series:
-                            yield group_dt, series, None
+                            yield [group_dt, series] + [None] * len(agg_funcs)
 
             group_dt = period_dt
 
