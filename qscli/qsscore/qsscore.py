@@ -49,7 +49,7 @@ def build_parser():
 
     parsers.add_parser('daemon', help='Run a daemon')
 
-    records_command = parsers.add_parser('records', help='Display when records were obtained')
+    records_command = parsers.add_parser('records', help='Display when all time bests were obtained')
     records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
     days_ago_option(records_command)
     parse_utils.regexp_option(records_command)
