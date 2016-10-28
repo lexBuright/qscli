@@ -1,10 +1,11 @@
+import json
 import os
 import shutil
 import StringIO
 import tempfile
 import unittest
 
-from qscli.qsscore.qsscore import run, build_parser
+from qscli.qsscore.qsscore import build_parser, run
 
 class TestCli(unittest.TestCase):
     def cli(self, command, input_data=''):
@@ -12,7 +13,7 @@ class TestCli(unittest.TestCase):
         args = ['--config-dir', self._config_dir] + command
         options = build_parser().parse_args(args)
         try:
-            return str(run(options, stdin))
+            return unicode(run(options, stdin))
         except SystemExit:
             raise Exception('Exitted out')
 
@@ -98,7 +99,7 @@ class TestCli(unittest.TestCase):
         self.assertEquals(len(self.cli(['log']).splitlines()), 2)
         self.assertTrue('12' in self.cli(['records']))
 
-    def test_delete(self):
+    def test_delete_record(self):
         self.cli(['store', 'first-metric', '121'])
         self.cli(['store', 'first-metric', '131'])
         self.assertEquals(len(self.cli(['log']).splitlines()), 2)
@@ -106,6 +107,60 @@ class TestCli(unittest.TestCase):
         self.assertEquals(len(self.cli(['log']).splitlines()), 1)
         self.assertTrue('121' in self.cli(['log']))
         self.assertTrue('131' not in self.cli(['log']))
+
+    def test_statistics(self):
+        self.cli(['store', 'metric', '1'])
+        self.cli(['store', 'metric', '2'])
+        self.cli(['store', 'metric', '3'])
+        self.assertEquals(self.cli(['best', 'metric']), '3.0')
+
+    def test_summary_small(self):
+        self.cli(['store', 'metric', '1'])
+        data = json.loads(self.cli(['summary', 'metric', '--json']))
+
+        # consistentcy testing - this doesn't completely break
+        self.cli(['summary', 'metric'])
+        self.assertEquals(data['value'], 1.0)
+        self.assertEquals(data['is_first'], True)
+        self.assertEquals(data['is_best'], True)
+        self.assertEquals(data['quantile'], 1.0)
+        self.assertEquals(data['rank'], 0)
+
+    def test_summary(self):
+        self.cli(['store', 'metric', '1'])
+        self.cli(['store', 'metric', '2'])
+        self.cli(['store', 'metric', '3'])
+
+        data = json.loads(self.cli(['summary', 'metric', '--json']))
+        # consistentcy testing - this doesn't completely break
+        self.cli(['summary', 'metric'])
+
+        self.assertEquals(data['mean'], 2.0)
+        self.assertEquals(data['best'], 3.0)
+        self.assertEquals(data['run_length'], 3)
+
+    def test_summary(self):
+        for x in [1, 2, 3, 1, 2]:
+            self.cli(['store', 'metric', str(x)])
+
+        data = json.loads(self.cli(['summary', 'metric', '--json']))
+        # consistentcy testing - this doesn't completely break
+        self.cli(['summary', 'metric'])
+
+        self.assertEquals(data['mean'], 1.8)
+        self.assertEquals(data['best'], 3.0)
+        self.assertEquals(data['run_length'], 2)
+        self.assertEquals(data['quantile'], 0.8)
+
+    def test_empty(self):
+        self.cli(['config', 'empty'])
+        self.cli(['summary', 'empty'])
+
+    def test_summary_broken_run(self):
+        for x in [1, 2, 3, 1]:
+            self.cli(['store', 'metric', str(x)])
+        summary = self.cli(['summary', 'metric'])
+        self.assertTrue('Broken run' in summary)
 
     def test_backup(self):
         self.cli(['store', 'first-metric', '1'])

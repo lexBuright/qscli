@@ -80,6 +80,8 @@ def build_parser():
 
     summary_parser = metric_command(parsers, 'summary', help_string='Summarise a result (defaults to the last value)')
     summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
+    summary_parser.add_argument('--json', action='store_true', help='Output as machine readable testing')
+
     ident_mx = summary_parser.add_mutually_exclusive_group()
     ident_mx.add_argument('--id', type=str, help='Show summary for the result with this id')
     ident_mx.add_argument('--index', type=int, help='Show the nth most recent value', default=0)
@@ -174,7 +176,12 @@ def run(options, stdin):
         elif options.command == 'run-length':
             return statistics.run_length(metric_data)
         elif options.command == 'summary':
-            return statistics.summary(metric_data, options.update, ident=options.id, index=options.index)
+            return statistics.summary(
+                metric_data,
+                options.update,
+                ident=options.id,
+                index=options.index,
+                is_json=options.json)
         elif options.command == 'config':
             return config.config(
                 metric_data,
