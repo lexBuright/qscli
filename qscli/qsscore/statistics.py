@@ -1,6 +1,7 @@
 "Functions that perform summary statistics on data"
 
 import itertools
+import json
 import logging
 
 import sparklines
@@ -10,12 +11,18 @@ from . import ids, store
 LOGGER = logging.getLogger('statistics')
 
 def best(metric_data):
-    best_record = max(metric_data['values'], key=lambda record: record['value'])
-    return best_record['value']
+    if not metric_data['values']:
+        return None
+    else:
+        best_record = max(metric_data['values'], key=lambda record: record['value'])
+        return best_record['value']
 
 def mean(metric_data):
-    value = sum([record['value'] for record in metric_data['values']]) / len(metric_data['values'])
-    return value
+    if len(metric_data['values']) == 0:
+        return None
+    else:
+        value = sum([record['value'] for record in metric_data['values']]) / len(metric_data['values'])
+        return value
 
 def run_length(metric_data):
     rev_values = [entry['value'] for entry in metric_data['values']][::-1]
@@ -48,45 +55,80 @@ def best_ratio(metric_data, index=0):
         else:
             return last / max(rest)
 
-def summary(metric_data, update=False, ident=None, index=0):
-    LOGGER.debug('Summarising')
-
-    value = store.get_value(metric_data, ident, index=index)
-    messages = ['{:.2f}'.format(value)]
+def get_summary_data(metric_data, ident, index):
     value_rank = rank(metric_data, ident=None, index=index)
-    if value_rank == 0 and len(metric_data['values']) > 1:
-        messages.append('New best')
-
-    if len(metric_data['values']) == 1:
-        messages.append('First time')
-
+    is_best = value_rank == 0
+    is_first = len(metric_data['values']) == 1
     runl = run_length(metric_data)
-    if runl > 1:
-        messages.append('Run of {}'.format(runl))
-    elif len(metric_data['values']) > 1:
-        if not update:
-            messages.append('Broken run :(')
+    is_broken_run = not is_first and runl < 2
+    quantile_value = quantile(metric_data, index=index)
 
-    if len(metric_data['values']) > 1:
-        messages.append('{} best'.format(ordinal_name(value_rank + 1)))
-        messages.append('Quantile: {:.2f}'.format(quantile(metric_data, index=index)))
-        ratio = best_ratio(metric_data, index=index)
-        if ratio is not None:
-            messages.append('Ratio of best: {:.2f}'.format(ratio))
+    timeseries = get_timeseries(metric_data, ident, index, 10)
+    sparkline = sparklines.sparklines(timeseries)[0]
+    mean_value = mean(metric_data)
+    num_values = len(metric_data['values'])
 
+    return dict(
+        mean=mean_value,
+        best=best(metric_data),
+        is_best=is_best,
+        is_first=is_first,
+        num_values=num_values,
+        run_length=runl,
+        rank=value_rank,
+        is_broken_run=is_broken_run,
+        quantile=quantile_value,
+        sparkline=sparkline,
+        timeseries=timeseries,
+        best_ratio=best_ratio(metric_data, index=index),
+        value = store.get_value(metric_data, ident, index=index)
+    )
+
+def get_timeseries(metric_data, ident, index, num_values):
     ident_type = metric_data.get('ident_type', None)
     ident_period = metric_data.get('ident_period', 1)
-
     id_series = ident_type and ids.ID_SERIES[ident_type]
+    return list(store.get_last_values(
+        metric_data,
+        num_values,
+        ident=ident,
+        id_series=id_series,
+        ident_period=ident_period,
+        index=index))
 
-    LOGGER.debug('Building sparkline')
-    old = list(store.get_last_values(metric_data, 10, ident=ident, id_series=id_series, ident_period=ident_period, index=index))
-    messages.append(sparklines.sparklines(old)[0])
+def summary_format(data, update):
+    messages = ['{:.2f}'.format(data['value'])]
 
-    LOGGER.debug('Formatting result')
+    if data['is_best']:
+        messages.append('New best')
+
+    if data['is_first']:
+        messages.append('First time')
+
+    if data['run_length'] > 1:
+        messages.append('Run of {}'.format(data['run_length']))
+
+    if data['is_broken_run'] and not update:
+        messages.append('Broken run :(')
+
+    if not data['is_first']:
+        messages.append('{} best'.format(ordinal_name(data['rank'] + 1)))
+        messages.append('Quantile: {:.2f}'.format(data['quantile']))
+        messages.append('Ratio of best: {:.2f}'.format(data['best_ratio']))
+
+    messages.append(data['sparkline'])
     result = u'{}'.format('\n'.join(messages))
-    LOGGER.debug('Result formatted')
     return result
+
+def summary(metric_data, update=False, ident=None, index=0, is_json=False):
+    data = get_summary_data(metric_data, ident, index)
+    if is_json:
+        return json.dumps(data)
+    else:
+        if data['num_values'] >= 1:
+            return summary_format(data, update)
+        else:
+            return 'No data'
 
 def rank(metric_data, ident=None, index=0):
     LOGGER.debug('Rank')

@@ -42,7 +42,8 @@ def update(metric_data, value, ident):
 
 def get_value(metric_data, ident=None, index=0):
     LOGGER.debug('Getting value')
-    return get_last_values(metric_data, 1, ident, index=index)[0]
+    values = get_last_values(metric_data, 1, ident, index=index)
+    return values[0] if values else None
 
 def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1, index=0):
     """If ids_before_func use it to generate a set of ids
@@ -54,7 +55,6 @@ def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1
     has_ids = any(entry.get('id') for entry in metric_data['values'])
 
     negative_index = -1 - index
-
 
     if has_ids:
         if ident is None:
