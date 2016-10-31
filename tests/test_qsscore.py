@@ -139,7 +139,7 @@ class TestCli(unittest.TestCase):
         self.assertEquals(data['best'], 3.0)
         self.assertEquals(data['run_length'], 3)
 
-    def test_summary(self):
+    def test_summary_modulation(self):
         for x in [1, 2, 3, 1, 2]:
             self.cli(['store', 'metric', str(x)])
 

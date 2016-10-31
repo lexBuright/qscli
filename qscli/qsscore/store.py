@@ -2,7 +2,6 @@ import collections
 import copy
 import csv
 import datetime
-import itertools
 import json
 import logging
 import StringIO
@@ -13,6 +12,7 @@ import jsdb
 
 from . import config, ids
 from . import parse_utils
+from . import ts_store
 
 LOGGER = logging.getLogger('data')
 
@@ -39,48 +39,6 @@ def update(metric_data, value, ident):
     else:
         metric_values[-1] = entry
     return ''
-
-def get_value(metric_data, ident=None, index=0):
-    LOGGER.debug('Getting value')
-    values = get_last_values(metric_data, 1, ident, index=index)
-    return values[0] if values else None
-
-def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1, index=0):
-    """If ids_before_func use it to generate a set of ids
-    before the last value (of the one specified by ident
-    """
-    if index < 0:
-        raise ValueError(index)
-
-    has_ids = any(entry.get('id') for entry in metric_data['values'])
-
-    negative_index = -1 - index
-
-    if has_ids:
-        if ident is None:
-            id_entries = sorted(metric_data['values'], key=lambda x: x.get('id'))
-            entries = id_entries[negative_index:negative_index - num:-1]
-        else:
-            before_id_entries = sorted([x for x in metric_data['values'] if x.get('id') <= ident], key=lambda x: x.get('id'))
-            entries = before_id_entries[negative_index:negative_index - num:-1]
-    else:
-        if ident is not None:
-            raise ValueError(ident)
-        else:
-            entries = metric_data['values'][negative_index:negative_index - num:-1]
-
-    if not has_ids and id_series:
-        raise Exception('Can only use an ids_before_func when we have ids')
-
-    if id_series:
-        series = id_series(ident or entries[0]['id'], -ident_period)
-        idents = itertools.islice(series, num)
-        values_by_id = {e['id']: e['value'] for e in entries}
-        result = [values_by_id.get(ident, 0) for ident in idents]
-        return result
-    else:
-        result = [e['value'] for e in entries]
-        return result
 
 def up_migrate_data(data):
     new_data = copy.copy(data)
@@ -225,10 +183,10 @@ def command_update(metric_data, command, refresh, first_id):
         raise Exception('Must have an --id-type to use this options')
 
     if first_id is None:
-        first_id = min(value['id'] for value in metric_data['values'] if value['id'] is not None)
+        first_id = min(ts_store.get_ids_values(metric_data))
 
     last_id = ids.TIME_ID_FUNC[metric_data.get('ident_type')](metric_data.get('ident_period', 1), datetime.datetime.now())
-    known_idents = set(value['id'] for value in metric_data['values'] if value['id'] is not None)
+    known_idents = set(ts_store.get_ids_values(metric_data))
 
     id_series = ids.ID_SERIES[metric_data['ident_type']]
     for ident in id_series(first_id, metric_data.get('ident_period', 1)):

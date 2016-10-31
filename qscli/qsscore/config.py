@@ -12,4 +12,3 @@ def config(metric_data, ident_type, ident_period):
     if ident_period is not None:
         metric_data['ident_period'] = ident_period
     return ''
-
