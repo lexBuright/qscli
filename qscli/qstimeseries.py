@@ -108,6 +108,9 @@ append_command.add_argument('--string', action='store_const', dest='value_type',
 append_command.add_argument('--id', type=str, help='Name a value', dest='ident')
 append_command.add_argument('value', type=str)
 
+series_command = parsers.add_parser('series', help='List the series')
+series_command.add_argument('--quiet', '-q', action='store_true', help='Only show names')
+
 PERIODS = {
     'm': datetime.timedelta(minutes=1),
     'h': datetime.timedelta(hours=1),
@@ -185,6 +188,8 @@ def main():
             include_missing=options.missing)
     elif options.command == 'delete':
         delete(db, options.series, options.ident)
+    elif options.command == 'series':
+        show_series(db)
     else:
         raise ValueError(options.command)
 
@@ -254,6 +259,13 @@ def delete(db, series, ident):
     ''', (series, ident))
     db.commit()
 
+def show_series(db):
+    cursor = db.cursor()
+    cursor.execute('''
+    SELECT series FROM timeseries GROUP BY 1 ORDER BY 1
+    ''')
+    for name, in cursor.fetchall():
+        print name
 
 if __name__ == '__main__':
 	main()
