@@ -110,6 +110,7 @@ append_command.add_argument('value', type=str)
 
 series_command = parsers.add_parser('series', help='List the series')
 series_command.add_argument('--quiet', '-q', action='store_true', help='Only show names')
+series_command.add_argument('--prefix', '-p', type=str, help='Find series with this prefix')
 
 PERIODS = {
     'm': datetime.timedelta(minutes=1),
@@ -189,7 +190,7 @@ def main():
     elif options.command == 'delete':
         delete(db, options.series, options.ident)
     elif options.command == 'series':
-        show_series(db)
+        show_series(db, prefix=options.prefix)
     else:
         raise ValueError(options.command)
 
@@ -259,12 +260,15 @@ def delete(db, series, ident):
     ''', (series, ident))
     db.commit()
 
-def show_series(db):
+def show_series(db, prefix=None):
     cursor = db.cursor()
     cursor.execute('''
     SELECT series FROM timeseries GROUP BY 1 ORDER BY 1
     ''')
     for name, in cursor.fetchall():
+        if prefix:
+            if not name.startswith(prefix):
+                continue
         print name
 
 if __name__ == '__main__':
