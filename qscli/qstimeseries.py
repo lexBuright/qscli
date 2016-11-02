@@ -168,6 +168,7 @@ show_command.add_argument('--series', type=str, help='Only show this timeseries'
 show_command.add_argument('--id', type=str, help='Only show the entry with this id', dest='ident')
 show_command.add_argument('--json', action='store_true', help='Output in machine readable json')
 show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
+show_command.add_argument('--delete', help='Delete the matches entries', action='store_true')
 
 delete_parser = parsers.add_parser('delete', help='Delete a value from a timeseries')
 delete_parser.add_argument('series', type=str, help='Which series to delete from')
@@ -190,7 +191,12 @@ def main():
     if options.command == 'append':
         append(db, options.series, options.value, options.value_type, options.ident)
     elif options.command == 'show':
-        print show(db, options.series, options.ident, options.json, indexes=options.index)
+
+        if options.delete:
+            delete(db, options.series, options.ident, indexes=options.index)
+        else:
+            print show(db, options.series, options.ident, options.json, indexes=options.index)
+
     elif options.command == 'aggregate':
         aggregate(
             db, options.series, options.period, options.record_stream,
@@ -262,13 +268,120 @@ def get_series(db):
     ''')
     return [x for (x,) in cursor.fetchall()]
 
-def delete(db, series, ident):
-    cursor = db.cursor()
-    cursor.execute('''
-    DELETE FROM timeseries
-    WHERE series=? AND given_ident=?
-    ''', (series, ident))
-    db.commit()
+def delete(db, series, ident=None, indexes=None):
+    if indexes is None:
+        cursor = db.cursor()
+        cursor.execute('''
+        SELECT * FROM timeseries
+        WHERE series=? AND given_ident=?
+        ''', (series, ident))
+        db.commit()
+    else:
+        for index in indexes:
+            if index < 0:
+                backwards = index < 0
+                index = -index -1
+            else:
+                index = index
+
+            cursor = db.cursor()
+
+            #values = [series] + ([ident] if ident else [])
+
+            query = StupidQuery(action='DELETE')
+            query.where_equals('series', series)
+            if ident:
+                query.where_equals('given_ident', ident)
+
+            query.order('id', reverse=backwards)
+            query.offset(index)
+            query.limit(1)
+
+            print query.query()
+
+            cursor.execute(query.query(), query.values)
+            print cursor.fetchall()
+            db.commit()
+
+class StupidQuery(object):
+    # Braindead orm, because using sqlalchemy isn't worthwhile
+    #  for this sore of simple activity
+
+    # If there was a library that just helped me build
+    # an sql expession
+
+    def __init__(self, action='SELECT', table='timeseries', fields=None):
+        self.action = action
+        self.table = table
+        self.values = []
+        self.conditions = []
+        if fields is None:
+            self.fields = ('*',) if action == 'SELECT' else None
+
+        if self.action == 'DELETE':
+            if fields is not None:
+                raise Exception('Cannot delete with fields')
+
+        self.order_key = None
+        self._offset = None
+        self._limit = None
+
+    def where_equals(self, key, value):
+        self.conditions.append('{} = ?'.format(key))
+        self.values.append(value)
+
+    def offset(self, offset):
+        self._offset = offset
+
+    def limit(self, limit):
+        self._limit = limit
+
+    def where(self, condition, *values):
+        self.conditions.append(condition)
+        self.values.extend(values)
+
+    def order(self, key, reverse=False):
+        if reverse:
+            self.order_key = '{} DESC'.format(key)
+        else:
+            self.order_key = key
+
+    def query(self):
+        if self.fields:
+            field_string = ','.join(self.fields)
+        else:
+            field_string = ''
+
+        if self.conditions:
+            condition_string = 'WHERE ' + ' AND '.join(self.conditions)
+        else:
+            condition_string = ''
+
+        if self.order_key:
+            order_string = 'ORDER BY {}'.format(self.order_key)
+        else:
+            order_string = ''
+
+        if self._limit:
+            limit_string = 'LIMIT {}'.format(self._limit)
+        else:
+            limit_string = ''
+
+        if self._offset:
+            offset_string = 'OFFSET {}'.format(self._offset)
+        else:
+            offset_string = ''
+
+        return '''{action} {field_string} FROM {table} {condition_string} {order_string} {limit_string} {offset_string}'''.format(
+            action=self.action,
+            field_string=field_string,
+            table=self.table,
+            condition_string=condition_string,
+            order_string=order_string,
+            limit_string=limit_string,
+            offset_string=offset_string,
+            )
+
 
 def show_series(db, prefix=None):
     cursor = db.cursor()
