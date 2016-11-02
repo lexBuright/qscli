@@ -315,8 +315,8 @@ class StupidQuery(object):
     # Braindead orm, because using sqlalchemy isn't worthwhile
     #  for this sore of simple activity
 
-    # If there was a library that just helped me build
-    # an sql expession
+    # If only there was a library that just helped me build
+    # an sql expession.
 
     def __init__(self, action='SELECT', table='timeseries', fields=None):
         self.action = action
