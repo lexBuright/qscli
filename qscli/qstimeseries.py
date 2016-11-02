@@ -74,13 +74,22 @@ def get_values(db, series, ident=None):
     cursor.execute(query, query_options)
     return cursor.fetchall()
 
+def only_show_indexes(iterable, indexes):
+    if any(index < 0 for index in indexes):
+        items = list(iterable)
+        for index in indexes:
+            yield items[index]
 
-def show(db, series, ident, json_output):
+    for index, x in enumerate(iterable):
+        if index in indexes:
+            yield x
+
+def show(db, series, ident, json_output, indexes=None):
     records = get_values(db, series, ident=ident)
+    records = only_show_indexes(records, indexes) if indexes is not None else records
     if not json_output:
         result = []
         for time_string, series, ident, value in records:
-
             if isinstance(value, (str, unicode)):
                 value = value.strip('\n')
 
@@ -158,6 +167,7 @@ show_command = parsers.add_parser('show', help='Show the values in a series')
 show_command.add_argument('--series', type=str, help='Only show this timeseries')
 show_command.add_argument('--id', type=str, help='Only show the entry with this id', dest='ident')
 show_command.add_argument('--json', action='store_true', help='Output in machine readable json')
+show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
 
 delete_parser = parsers.add_parser('delete', help='Delete a value from a timeseries')
 delete_parser.add_argument('series', type=str, help='Which series to delete from')
@@ -180,7 +190,7 @@ def main():
     if options.command == 'append':
         append(db, options.series, options.value, options.value_type, options.ident)
     elif options.command == 'show':
-        print show(db, options.series, options.ident, options.json)
+        print show(db, options.series, options.ident, options.json, indexes=options.index)
     elif options.command == 'aggregate':
         aggregate(
             db, options.series, options.period, options.record_stream,
