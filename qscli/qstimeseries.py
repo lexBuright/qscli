@@ -133,11 +133,19 @@ def mean(lst):
 def rng(lst):
     return max(lst) - min(lst)
 
+def display_values(lst):
+    return ' '.join(map(str, lst))
+
+def sorted_values(lst):
+    return ' '.join(map(str, sorted(lst)))
+
 AGGREGATION_FUNCTIONS = {
     'min': min,
     'max': max,
     'mean': mean,
-    'rng': rng
+    'rng': rng,
+    'values': display_values,
+    'sorted_values': sorted_values,
 }
 
 
