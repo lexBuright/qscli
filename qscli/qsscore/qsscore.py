@@ -133,6 +133,12 @@ def run(options, stdin):
 
     data_file = os.path.join(options.config_dir, 'data.jsdb')
 
+    ts_store = native_store.NativeTimeSeriesStore(options.config_dir)
+    scorer = Scorer(ts_store)
+    stats = statistics.Statistics(ts_store)
+    data_store = store.Store(ts_store)
+    config_obj = config.Config(ts_store)
+
     with with_data(data_file) as data:
         # new_data = migrate_data(data, DATA_VERSION)
         # data.clear()
@@ -141,7 +147,7 @@ def run(options, stdin):
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
         elif options.command == 'log':
-            return store.log_action(data, options, delete=options.delete)
+            return data_store.log_action(data, options, delete=options.delete)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
             metrics.pop(options.metric)
@@ -161,35 +167,35 @@ def run(options, stdin):
                 start, end = store.days_ago_bounds(options.days_ago)
             else:
                 start = end = None
-            return records(data, options.json, options.regex, start=start, end=end)
+            return scorer.records(data, options.json, options.regex, start=start, end=end)
 
-        metric_data = config.get_metric_data(data, options.metric)
+        metric_data = config_obj.get_metric_data(data, options.metric)
         if options.command == 'store':
-            return store.store(metric_data, options.value)
+            return data_store.store(metric_data, options.value)
         elif options.command == 'store-csv':
-            return store.store_csv(metric_data, stdin.read())
+            return data_store.store_csv(metric_data, stdin.read())
         elif options.command == 'update':
-            return store.update(metric_data, options.value, options.id)
+            return data_store.update(metric_data, options.value, options.id)
         elif options.command == 'best':
-            return statistics.best(metric_data)
+            return stats.best(metric_data)
         elif options.command == 'mean':
-            return statistics.mean(metric_data)
+            return stats.mean(metric_data)
         elif options.command == 'run-length':
-            return statistics.run_length(metric_data)
+            return stats.run_length(metric_data)
         elif options.command == 'summary':
-            return statistics.summary(
+            return stats.summary(
                 metric_data,
                 options.update,
                 ident=options.id,
                 index=options.index,
                 is_json=options.json)
         elif options.command == 'config':
-            return config.config(
+            return config_obj.config(
                 metric_data,
                 options.ident_type,
                 options.ident_period)
         elif options.command == 'command-update':
-            store.command_update(metric_data, command=options.update_command, refresh=options.refresh, first_id=options.first_id)
+            data_store.command_update(metric_data, command=options.update_command, refresh=options.refresh, first_id=options.first_id)
         else:
             raise ValueError(options.command)
 
@@ -204,40 +210,44 @@ def restore(data, backup_filename):
     backup_data = json.loads(backup_filename)
     data.update(**backup_data)
 
-def records(data, json_output, regex, start=None, end=None):
-    result = {}
-    for metric_name, metric_data in data['metrics'].items():
-        timeseries = native_store.get_timeseries(metric_data)
+class Scorer(object):
+    def __init__(self, ts_store):
+        self._ts_store = ts_store
 
-        if regex is not None:
-            if not regex.search(metric_name):
+    def records(self, data, json_output, regex, start=None, end=None):
+        result = {}
+        for metric_name, metric_data in data['metrics'].items():
+            timeseries = self._ts_store.get_timeseries(metric_data)
+
+            if regex is not None:
+                if not regex.search(metric_name):
+                    continue
+
+            if self._ts_store.num_values(metric_data) == 0:
                 continue
 
-        if native_store.num_values(metric_data) == 0:
-            continue
+            sort_key = lambda v: (v.value, -v.time)
+            record_entry = max(timeseries, key=sort_key)
 
-        sort_key = lambda v: (v.value, -v.time)
-        record_entry = max(timeseries, key=sort_key)
+            previous_entries = list(v for v in timeseries if v.time < record_entry.time)
+            beaten_entry = max(previous_entries, key=sort_key) if previous_entries else None
 
-        previous_entries = list(v for v in timeseries if v.time < record_entry.time)
-        beaten_entry = max(previous_entries, key=sort_key) if previous_entries else None
+            if start and record_entry.time < start:
+                continue
+            if end and record_entry.time >= end:
+                continue
 
-        if start and record_entry.time < start:
-            continue
-        if end and record_entry.time >= end:
-            continue
+            if beaten_entry:
+                improvement = record_entry.value - beaten_entry.value
+            else:
+                improvement = None
 
-        if beaten_entry:
-            improvement = record_entry.value - beaten_entry.value
+            result[metric_name] = dict(value=record_entry.value, time=record_entry.value, improvement=improvement)
+
+        if not json_output:
+            output = []
+            for key in sorted(result.keys()):
+                output.append('{} {} {} {}'.format(key, result[key]['value'], improvement, datetime.datetime.fromtimestamp(result[key]['time']).isoformat()))
+            return '\n'.join(output)
         else:
-            improvement = None
-
-        result[metric_name] = dict(value=record_entry.value, time=record_entry.value, improvement=improvement)
-
-    if not json_output:
-        output = []
-        for key in sorted(result.keys()):
-            output.append('{} {} {} {}'.format(key, result[key]['value'], improvement, datetime.datetime.fromtimestamp(result[key]['time']).isoformat()))
-        return '\n'.join(output)
-    else:
-        return json.dumps(dict(records=result))
+            return json.dumps(dict(records=result))
