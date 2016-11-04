@@ -24,7 +24,6 @@ def mean(metric_data):
         value = sum(ts_store.get_raw_values(metric_data)) / ts_store.num_values(metric_data)
         return value
 
-
 def run_length(metric_data):
     rev_values = ts_store.get_raw_values(metric_data)[::-1]
 
