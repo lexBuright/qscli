@@ -25,6 +25,7 @@ from . import store
 from . import config
 from . import statistics
 from . import parse_utils
+from . import ts_store
 
 LOGGER = logging.getLogger()
 
@@ -205,32 +206,33 @@ def restore(data, backup_filename):
 
 def records(data, json_output, regex, start=None, end=None):
     result = {}
-    for metric_name, metric in data['metrics'].items():
+    for metric_name, metric_data in data['metrics'].items():
+        timeseries = ts_store.get_timeseries(metric_data)
 
         if regex is not None:
             if not regex.search(metric_name):
                 continue
 
-        if not metric['values']:
+        if ts_store.num_values(metric_data) == 0:
             continue
 
-        sort_key = lambda v: (v['value'], -v['time'])
-        record_entry = max(metric['values'], key=sort_key)
-        previous_entries = list(v for v in metric['values'] if v['time'] < record_entry['time'])
+        sort_key = lambda v: (v.value, -v.time)
+        record_entry = max(timeseries, key=sort_key)
+
+        previous_entries = list(v for v in timeseries if v.time < record_entry.time)
         beaten_entry = max(previous_entries, key=sort_key) if previous_entries else None
 
-        if start and record_entry['time'] < start:
+        if start and record_entry.time < start:
             continue
-
-        if end and record_entry['time'] >= end:
+        if end and record_entry.time >= end:
             continue
 
         if beaten_entry:
-            improvement = record_entry['value'] - beaten_entry['value']
+            improvement = record_entry.value - beaten_entry.value
         else:
             improvement = None
 
-        result[metric_name] = dict(value=record_entry['value'], time=record_entry['time'], improvement=improvement)
+        result[metric_name] = dict(value=record_entry.value, time=record_entry.value, improvement=improvement)
 
     if not json_output:
         output = []

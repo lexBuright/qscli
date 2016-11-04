@@ -1,12 +1,26 @@
 # Interfaces to timeseries data (in preference to multiple backenda
 
+import collections
 import itertools
+import time
+
+DataPoint = collections.namedtuple('DataPoint', 'time value id')
+
+def init(metric_data):
+    metric_data.setdefault('values', [])
+
+def get_timeseries(metric_data):
+    return [DataPoint(time=value['time'], value=value['value'], id=i) for i, value in enumerate(metric_data['values'])]
 
 def _get_values(metric_data):
     return metric_data['values']
 
 def get_raw_values(metric_data):
     return [entry['value'] for entry in metric_data['values']]
+
+def delete_ids(metric_data, ids):
+    for index in sorted(ids, reverse=True):
+        metric_data['values'].pop(index) # unnecessary O(n**2)
 
 def get_ids_values(metric_data):
     return [entry['id'] for entry in metric_data['values'] if entry['id'] is not None]
@@ -60,3 +74,47 @@ def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1
     else:
         result = [e['value'] for e in entries]
         return result
+
+def store(metric_data, time, value):
+    metric_data['values'].append(dict(time=time, value=value))
+
+def update_ids(metric_data, value_by_id):
+    "Upsert values by id"
+    updated = set()
+    for entry in metric_data['values']:
+        entry_id = entry.get('id')
+        if entry_id is not None:
+            if entry_id in value_by_id:
+                entry['value'] = float(value_by_id[entry_id])
+                entry['time'] = time.time()
+                updated.add(entry_id)
+
+    for ident, value in value_by_id.items():
+        if ident in updated:
+            continue
+        else:
+            metric_data['values'].append(dict(time=time.time(), id=ident, value=float(value)))
+    return ''
+
+def update(metric_data, value, ident):
+    init(metric_data)
+
+    entry = dict(time=time.time(), value=value)
+    if ident is not None:
+        entry['id'] = ident
+
+    metric_values = metric_data['values']
+
+    if not metric_values:
+        metric_values.append(entry)
+
+    if ident is not None:
+        ident_entries = [x for x in metric_values if x.get('id') == ident]
+        if ident_entries:
+            ident_entry, = ident_entries
+            ident_entry['value'] = value
+        else:
+            metric_values.append(entry)
+    else:
+        metric_values[-1] = entry
+    return ''

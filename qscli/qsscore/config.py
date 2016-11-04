@@ -1,9 +1,11 @@
 "Configuration of qsscore as a whole and particular metrics"
 
+from . import ts_store
+
 def get_metric_data(data, metric):
     metrics = data.setdefault('metrics', dict())
     metric_data = metrics.setdefault(metric, dict() )
-    metric_data.setdefault('values', [])
+    ts_store.init(metric_data)
     return metric_data
 
 def config(metric_data, ident_type, ident_period):
