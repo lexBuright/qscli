@@ -2,4 +2,7 @@
 *.egg-info
 dist
 cover
+/.coverage
+/coverage.xml
 .coverage
+/.noseids
