@@ -25,7 +25,7 @@ from . import store
 from . import config
 from . import statistics
 from . import parse_utils
-from . import ts_store
+from . import native_store
 
 LOGGER = logging.getLogger()
 
@@ -207,13 +207,13 @@ def restore(data, backup_filename):
 def records(data, json_output, regex, start=None, end=None):
     result = {}
     for metric_name, metric_data in data['metrics'].items():
-        timeseries = ts_store.get_timeseries(metric_data)
+        timeseries = native_store.get_timeseries(metric_data)
 
         if regex is not None:
             if not regex.search(metric_name):
                 continue
 
-        if ts_store.num_values(metric_data) == 0:
+        if native_store.num_values(metric_data) == 0:
             continue
 
         sort_key = lambda v: (v.value, -v.time)

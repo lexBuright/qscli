@@ -10,14 +10,14 @@ import time
 
 from . import ids
 from . import parse_utils
-from . import ts_store
+from . import native_store
 
 LOGGER = logging.getLogger('data')
 
 def update(metric_data, value, ident):
     if metric_data.get('ident_type') and ident is None:
         ident = ids.TIME_ID_FUNC[metric_data.get('ident_type')](datetime.datetime.now())
-    ts_store.update(metric_data, value, ident)
+    native_store.update(metric_data, value, ident)
 
 def up_migrate_data(data):
     new_data = copy.copy(data)
@@ -48,8 +48,8 @@ def log_action(data, options, delete=False):
 def store_csv(metric_data, csv_string):
     entries = list(csv.reader(StringIO.StringIO(csv_string)))
     value_by_id = dict(entries)
-    ts_store.init(metric_data)
-    ts_store.update_ids(metric_data, value_by_id)
+    native_store.init(metric_data)
+    native_store.update_ids(metric_data, value_by_id)
 
 
 def get_version(data):
@@ -91,7 +91,7 @@ def find_entries(data, name_regex, start_time, end_time, indexes, name):
             continue
 
         values = []
-        for value in ts_store.get_timeseries(metric_data):
+        for value in native_store.get_timeseries(metric_data):
             if start_time and value.time < start_time:
                 continue
             if end_time and value.time >= end_time:
@@ -113,11 +113,11 @@ def delete_entries(data, entries):
         deleted_by_metric[entry['metric']].append(entry['id'])
 
     for metric, lst in deleted_by_metric.items():
-        ts_store.delete_ids(data['metrics'][metric], lst)
+        native_store.delete_ids(data['metrics'][metric], lst)
 
 def store(metric_data, value):
-    ts_store.init(metric_data)
-    ts_store.store(metric_data, time.time(), value)
+    native_store.init(metric_data)
+    native_store.store(metric_data, time.time(), value)
     return ''
 
 def command_update(metric_data, command, refresh, first_id):
@@ -125,10 +125,10 @@ def command_update(metric_data, command, refresh, first_id):
         raise Exception('Must have an --id-type to use this options')
 
     if first_id is None:
-        first_id = min(ts_store.get_ids_values(metric_data))
+        first_id = min(native_store.get_ids_values(metric_data))
 
     last_id = ids.TIME_ID_FUNC[metric_data.get('ident_type')](metric_data.get('ident_period', 1), datetime.datetime.now())
-    known_idents = set(ts_store.get_ids_values(metric_data))
+    known_idents = set(native_store.get_ids_values(metric_data))
 
     id_series = ids.ID_SERIES[metric_data['ident_type']]
     for ident in id_series(first_id, metric_data.get('ident_period', 1)):

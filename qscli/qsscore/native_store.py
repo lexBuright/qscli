@@ -1,4 +1,4 @@
-# Interfaces to timeseries data (in preference to multiple backenda
+"A store for timeseries that keeps data in the configuration file"
 
 import collections
 import itertools
