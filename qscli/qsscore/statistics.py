@@ -6,26 +6,26 @@ import logging
 
 import sparklines
 
-from . import ids, store
+from . import ids, store, ts_store
 
 LOGGER = logging.getLogger('statistics')
 
 def best(metric_data):
-    if not metric_data['values']:
+    if not ts_store.check_if_empty(metric_data):
         return None
     else:
-        best_record = max(metric_data['values'], key=lambda record: record['value'])
-        return best_record['value']
+        best_record = max(ts_store.get_raw_values(metric_data))
+        return best_record
 
 def mean(metric_data):
-    if len(metric_data['values']) == 0:
+    if not ts_store.check_if_empty(metric_data):
         return None
     else:
-        value = sum([record['value'] for record in metric_data['values']]) / len(metric_data['values'])
+        value = sum(ts_store.get_raw_values(metric_data)) / ts_store.num_values(metric_data)
         return value
 
 def run_length(metric_data):
-    rev_values = [entry['value'] for entry in metric_data['values']][::-1]
+    rev_values = ts_store.get_raw_values(metric_data)[::-1]
 
     records = zip(rev_values,rev_values[1:])
     result = len(list(itertools.takewhile(lambda x: x[0] > x[1], records))) + 1
@@ -35,21 +35,21 @@ def quantile(metric_data, index=0):
     # don't pull in numpy / scipy dependnecies
     LOGGER.debug('Quantile')
 
-    values = [d['value'] for d in metric_data['values']]
+    values = ts_store.get_raw_values(metric_data)
     if not values:
         return None
 
-    last = store.get_value(metric_data, index=index)
+    last = ts_store.get_value(metric_data, index=index)
     lower = len([x for x in values if x <= last])
     upper = len(values) - len([x for x in values if x > last])
     return float(lower + upper) / 2 / len(values)
 
 def best_ratio(metric_data, index=0):
-    if len(metric_data['values']) < 1:
+    if ts_store.num_values(metric_data) < 1:
         return None
     else:
-        last = store.get_value(metric_data, index=index)
-        rest = [x['value'] for x in metric_data['values'][:-1]]
+        last = ts_store.get_value(metric_data, index=index)
+        rest = ts_store.get_raw_values(metric_data)[:-1]
         if not rest or max(rest) == 0:
             return None
         else:
@@ -58,7 +58,7 @@ def best_ratio(metric_data, index=0):
 def get_summary_data(metric_data, ident, index):
     value_rank = rank(metric_data, ident=None, index=index)
     is_best = value_rank == 0
-    is_first = len(metric_data['values']) == 1
+    is_first = ts_store.num_values(metric_data) == 1
     runl = run_length(metric_data)
     is_broken_run = not is_first and runl < 2
     quantile_value = quantile(metric_data, index=index)
@@ -66,7 +66,7 @@ def get_summary_data(metric_data, ident, index):
     timeseries = get_timeseries(metric_data, ident, index, 10)
     sparkline = sparklines.sparklines(timeseries)[0]
     mean_value = mean(metric_data)
-    num_values = len(metric_data['values'])
+    num_values = ts_store.num_values(metric_data)
 
     return dict(
         mean=mean_value,
@@ -81,14 +81,14 @@ def get_summary_data(metric_data, ident, index):
         sparkline=sparkline,
         timeseries=timeseries,
         best_ratio=best_ratio(metric_data, index=index),
-        value = store.get_value(metric_data, ident, index=index)
+        value = ts_store.get_value(metric_data, ident, index=index)
     )
 
 def get_timeseries(metric_data, ident, index, num_values):
     ident_type = metric_data.get('ident_type', None)
     ident_period = metric_data.get('ident_period', 1)
     id_series = ident_type and ids.ID_SERIES[ident_type]
-    return list(store.get_last_values(
+    return list(ts_store.get_last_values(
         metric_data,
         num_values,
         ident=ident,
@@ -133,9 +133,9 @@ def summary(metric_data, update=False, ident=None, index=0, is_json=False):
 def rank(metric_data, ident=None, index=0):
     LOGGER.debug('Rank')
     result = 0
-    last = store.get_value(metric_data, ident, index=index)
-    for entry in metric_data['values']:
-        if entry['value'] > last:
+    last = ts_store.get_value(metric_data, ident, index=index)
+    for value in ts_store.get_raw_values(metric_data):
+        if value > last:
             result += 1
     return result
 

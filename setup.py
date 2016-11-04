@@ -5,7 +5,6 @@ from setuptools import setup
 DESCRIPTION = 'qscli is a suite of command line tools for quantified-self types of activity'
 
 TEST_REQUIRES = ['zodb'] # for zodb backend
-
 setup(
     name='qscli',
     version='0.1',
