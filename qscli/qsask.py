@@ -65,6 +65,7 @@ daemon.add_argument('--questions', '-q', type=parse_csv, help='Csv of questions 
 
 list_parser = parsers.add_parser('list', help='List the questions')
 list_parser.add_argument('--type', '-t', choices=TYPES, help='Only display questions of this type')
+list_parser.add_argument('--json', '-j', action='store_true', help='Output in machine readable json')
 
 delete_parser = parsers.add_parser('delete', help='Delete a question')
 delete_parser.add_argument('name', type=str)
@@ -139,7 +140,7 @@ def run(args):
         elif options.command == 'timeseries':
             return timeseries_run(options.config_dir, options.timeseries_command, allow_error=True)
         elif options.command == 'list':
-            return list_questions(data, options.type)
+            return list_questions(data, options.type, options.json)
         elif options.command == 'delete':
             return delete_question(data, options.name)
         else:
@@ -189,15 +190,21 @@ def edit_question(data, name, period, prompt, type, choices=None, if_command=Non
     if if_command is not None:
         question['if_command'] = if_command
 
-def list_questions(data, question_type):
-    result = []
+def list_questions(data, question_type, is_json):
+    json_result = []
+
     for name, question in sorted(data['questions'].items()):
         if question_type is not None and question['type'] != question_type:
             continue
 
-        result.append('{} {}'.format(name, question['period']))
-    if result:
-        return '\n'.join(result) + '\n'
+        json_result.append(
+            dict(name=name, period=question['period'])
+            )
+    if not is_json:
+        if json_result:
+            return '\n'.join(['{name} {period}'.format(**record) for record in json_result])
+    else:
+        return json.dumps(dict(result=json_result))
 
 def delete_question(data, name):
     del data['questions'][name]
