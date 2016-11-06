@@ -8,6 +8,7 @@ qstimeseries append stringseries --string "this is a string value"
 """
 
 import argparse
+import calendar
 import collections
 import datetime
 import json
@@ -16,6 +17,7 @@ import os
 import sqlite3
 import sys
 import time
+import pytz
 
 LOGGER = logging.getLogger()
 
@@ -99,8 +101,8 @@ def show(db, series, ident, json_output, indexes=None):
     else:
         result = []
         for time_string, series, ident, value in records:
-            dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-            unix_time = time.mktime(dt.timetuple())
+            dt = pytz.UTC.localize(datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S'), is_dst=None)
+            unix_time = calendar.timegm(dt.timetuple())
             result.append(dict(time=unix_time, series=series, id=ident, value=value))
         return json.dumps(result)
 
