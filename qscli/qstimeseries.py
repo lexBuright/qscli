@@ -49,13 +49,21 @@ def ensure_database(config_dir):
 
     return sqlite3.connect(data_file)
 
-def append(db, series, value_string, value_type, ident):
+def append(db, series, value_string, value_type, ident, time_value):
     if ident and ident.native_id is not None:
         raise Exception('internal-- ids reserved for internal assignment')
     value = value_type(value_string)
-    cursor = db.cursor()
+
     value_field = {str: 'string_value', float: 'float_value'}[value_type]
-    cursor.execute('INSERT INTO timeseries(series, {}, given_ident) values (?, ?, ?)'.format(value_field), (series, value, ident and ident.given_id))
+
+    query = StupidQuery(action='INSERT')
+    query.insert_field('series', series)
+    query.insert_field(value_field, value)
+    query.insert_field('given_ident', ident and ident.given_id)
+    if time_value is not None:
+        query.insert_field_expression('time', "datetime(?, 'unixepoch')", time_value)
+    cursor = db.cursor()
+    cursor.execute(query.query(), query.values())
     db.commit()
 
 def get_values(db, series, ident=None):
@@ -73,7 +81,7 @@ def get_values(db, series, ident=None):
     query.order('time')
 
     cursor = db.cursor()
-    cursor.execute(query.query(), query.values)
+    cursor.execute(query.query(), query.values())
     return cursor.fetchall()
 
 def only_show_indexes(iterable, indexes):
@@ -117,6 +125,7 @@ def build_parser():
     append_command.add_argument('series', type=str, help='Timeseries')
     append_command.add_argument('--string', action='store_const', dest='value_type', const=str, default=float)
     append_command.add_argument('--id', type=parse_ident, help='Name a value', dest='ident')
+    append_command.add_argument('--time', type=float, help='Insert the value at this unix time (rather than the current time)')
     append_command.add_argument('value', type=str)
 
     series_command = parsers.add_parser('series', help='List the series')
@@ -205,7 +214,7 @@ def run(args):
 
     db = ensure_database(config_dir)
     if options.command == 'append':
-        return append(db, options.series, options.value, options.value_type, options.ident)
+        return append(db, options.series, options.value, options.value_type, options.ident, options.time)
     elif options.command == 'show':
 
         if options.delete:
@@ -308,7 +317,7 @@ def delete(db, series, ident=None, indexes=None):
             query.where_equals('given_ident', ident.given_id)
 
         cursor = db.cursor()
-        cursor.execute(query.query(), query.values)
+        cursor.execute(query.query(), query.values())
         db.commit()
     else:
         for index in indexes:
@@ -331,8 +340,7 @@ def delete(db, series, ident=None, indexes=None):
             query.offset(index)
             query.limit(1)
 
-            cursor.execute(query.query(), query.values)
-            print cursor.fetchall()
+            cursor.execute(query.query(), query.values())
             db.commit()
 
 class StupidQuery(object):
@@ -345,7 +353,10 @@ class StupidQuery(object):
     def __init__(self, action='SELECT', table='timeseries', fields=None):
         self.action = action
         self.table = table
-        self.values = []
+        self.insert_fields = []
+        self.insert_values = []
+        self.insert_expressions = []
+        self.where_values = []
         self.conditions = []
         if fields is None:
             self.fields = ('*',) if action == 'SELECT' else None
@@ -360,9 +371,19 @@ class StupidQuery(object):
         self._offset = None
         self._limit = None
 
+    def insert_field(self, field, value):
+        self.insert_field_expression(field, '?', value)
+
+    def insert_field_expression(self, field, expression, *values):
+        if self.action != 'INSERT':
+            raise Exception('Can only use insert_field if inserting')
+        self.insert_fields.append(field)
+        self.insert_expressions.append(expression)
+        self.insert_values.extend(values)
+
     def where_equals(self, key, value):
         self.conditions.append('{} = ?'.format(key))
-        self.values.append(value)
+        self.where_values.append(value)
 
     def offset(self, offset):
         self._offset = offset
@@ -372,7 +393,7 @@ class StupidQuery(object):
 
     def where(self, condition, *values):
         self.conditions.append(condition)
-        self.values.extend(values)
+        self.where_values.extend(values)
 
     def order(self, key, reverse=False):
         if reverse:
@@ -406,15 +427,31 @@ class StupidQuery(object):
         else:
             offset_string = ''
 
-        return '''{action} {field_string} FROM {table} {condition_string} {order_string} {limit_string} {offset_string}'''.format(
-            action=self.action,
-            field_string=field_string,
-            table=self.table,
-            condition_string=condition_string,
-            order_string=order_string,
-            limit_string=limit_string,
-            offset_string=offset_string,
-            )
+        if self.action in ('SELECT', 'DELETE'):
+            return '''{action} {field_string} FROM {table} {condition_string} {order_string} {limit_string} {offset_string}'''.format(
+                action=self.action,
+                field_string=field_string,
+                table=self.table,
+                condition_string=condition_string,
+                order_string=order_string,
+                limit_string=limit_string,
+                offset_string=offset_string,
+                )
+        elif self.action == 'INSERT':
+            insert_field_string = ', '.join(self.insert_fields)
+            value_placeholders = ', '.join(['?'] * len (self.insert_fields))
+
+            return 'INSERT INTO {table}({insert_field_string}) VALUES ({insert_expressions})'.format(
+                table=self.table,
+                insert_field_string=insert_field_string,
+                insert_expressions=', '.join(self.insert_expressions),
+                )
+
+        else:
+            raise ValueError(action)
+
+    def values(self):
+        return self.insert_values + self.where_values
 
 
 def show_series(db, prefix=None):

@@ -24,6 +24,14 @@ class TimeseriesTest(unittest.TestCase):
         self.assertEquals(value['value'], 1)
         self.assertEquals(value['id'], 'internal--1')
 
+    def test_append_at_time(self):
+        self.run_cli('append', 'metric', '1', '--time', '1000')
+        value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
+        self.assertEquals(value['time'], 1000)
+        self.assertEquals(value['value'], 1)
+
+
+
     def test_delete_internal(self):
         self.run_cli('append', 'metric', '1')
         self.run_cli('append', 'metric', '2')
