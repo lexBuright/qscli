@@ -19,6 +19,8 @@ import sys
 import time
 import pytz
 
+from . import sqlexp
+
 LOGGER = logging.getLogger()
 
 DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qstimeseries')
@@ -57,9 +59,9 @@ def append(db, series, value_string, value_type, ident, time_value, update):
     value_field = {str: 'string_value', float: 'float_value'}[value_type]
 
     if update:
-        query = StupidQuery(action='INSERT OR REPLACE')
+        query = sqlexp.Query(action='INSERT OR REPLACE')
     else:
-        query = StupidQuery(action='INSERT')
+        query = sqlexp.Query(action='INSERT')
 
     query.insert_field('series', series)
     query.insert_field(value_field, value)
@@ -75,17 +77,20 @@ def append(db, series, value_string, value_type, ident, time_value, update):
         raise
     db.commit()
 
-def get_values(db, series, ident=None):
-    query = StupidQuery(
+def get_values(db, series, ids=None):
+    query = sqlexp.Query(
         action='SELECT',
         fields=('time', 'series', "coalesce(given_ident, 'internal--' || id)", "coalesce(float_value, string_value)"))
 
     if series is not None:
         query.where_equals('series', series)
-    if ident and ident.given_id is not None:
-        query.where_equals('given_ident', ident.given_id)
-    if ident and ident.native_id:
-        query.where_equals('id', ident.native_id)
+
+    if ids:
+        for ident in ids:
+            if ident.given_id is not None:
+                query.where_equals('given_ident', ident.given_id)
+            if ident.native_id:
+                query.where_equals('id', ident.native_id)
 
     query.order('time')
 
@@ -103,8 +108,8 @@ def only_show_indexes(iterable, indexes):
             if index in indexes:
                 yield x
 
-def show(db, series, ident, json_output, indexes=None):
-    records = get_values(db, series, ident=ident)
+def show(db, series, ids, json_output, indexes=None):
+    records = get_values(db, series, ids=ids)
     records = only_show_indexes(records, indexes) if indexes is not None else records
     if not json_output:
         result = []
@@ -159,7 +164,7 @@ def build_parser():
 
     show_command = parsers.add_parser('show', help='Show the values in a series')
     show_command.add_argument('--series', type=str, help='Only show this timeseries')
-    show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident')
+    show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident', action='append')
     show_command.add_argument('--json', action='store_true', help='Output in machine readable json')
     show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
     show_command.add_argument('--delete', help='Delete the matches entries', action='store_true')
@@ -167,7 +172,7 @@ def build_parser():
     delete_parser = parsers.add_parser('delete', help='Delete a value from a timeseries')
     delete_parser.add_argument('series', type=str, help='Which series to delete from')
     mx = delete_parser.add_mutually_exclusive_group(required=True)
-    mx.add_argument('--id', type=parse_ident, help='Delete entry with this id', dest='ident')
+    mx.add_argument('--id', type=parse_ident, help='Delete entry with this id', dest='ident', action='append')
     return parser
 
 PERIODS = {
@@ -312,19 +317,25 @@ def parse_ident(ident_string):
     else:
         return IdentUnion(None, None)
 
-def delete(db, series, ident=None, indexes=None):
-    if not ident and not indexes:
+def delete(db, series, ids=None, indexes=None):
+    print 'IDS', ids
+    if not ids and not indexes:
         raise ValueError()
 
-    if indexes is None:
-        query = StupidQuery(action='DELETE')
-        if ident.native_id is not None:
-            query.where_equals('id', ident.native_id)
+    if ids is not None :
+        query = sqlexp.Query(action='DELETE')
+        id_filter = sqlexp.Or()
+        for ident in ids:
+            if ident.native_id is not None:
+                id_filter.add_equals('id', ident.native_id)
 
-        if ident.given_id:
-            query.where_equals('given_ident', ident.given_id)
+            if ident.given_id:
+                id_filter.add_equals('given_ident', ident.given_id)
+
+        query.where_expression(id_filter)
 
         cursor = db.cursor()
+        print query.query()
         cursor.execute(query.query(), query.values())
         db.commit()
     else:
@@ -339,7 +350,7 @@ def delete(db, series, ident=None, indexes=None):
 
             #values = [series] + ([ident] if ident else [])
 
-            query = StupidQuery(action='DELETE')
+            query = sqlexp.Query(action='DELETE')
             query.where_equals('series', series)
             if ident:
                 query.where_equals('given_ident', ident)
@@ -350,120 +361,6 @@ def delete(db, series, ident=None, indexes=None):
 
             cursor.execute(query.query(), query.values())
             db.commit()
-
-class StupidQuery(object):
-    # Braindead orm, because using sqlalchemy isn't worthwhile
-    #  for this sore of simple activity
-
-    # If only there was a library that just helped me build
-    # an sql expession.
-
-    def __init__(self, action='SELECT', table='timeseries', fields=None):
-        self.action = action
-        self.table = table
-        self.insert_fields = []
-        self.insert_values = []
-        self.insert_expressions = []
-        self.where_values = []
-        self.conditions = []
-        if fields is None:
-            self.fields = ('*',) if action == 'SELECT' else None
-        else:
-            self.fields = fields
-
-        if self.action == 'DELETE':
-            if fields is not None:
-                raise Exception('Cannot delete with fields')
-
-        self.order_key = None
-        self._offset = None
-        self._limit = None
-
-    def insert_field(self, field, value):
-        self.insert_field_expression(field, '?', value)
-
-    def insert_field_expression(self, field, expression, *values):
-        if not self._is_inserting():
-            raise Exception('Can only use insert_field if inserting ({})'.format(self.action))
-
-        self.insert_fields.append(field)
-        self.insert_expressions.append(expression)
-        self.insert_values.extend(values)
-
-    def _is_inserting(self):
-        return self.action in ('INSERT', 'INSERT OR REPLACE')
-
-    def where_equals(self, key, value):
-        self.conditions.append('{} = ?'.format(key))
-        self.where_values.append(value)
-
-    def offset(self, offset):
-        self._offset = offset
-
-    def limit(self, limit):
-        self._limit = limit
-
-    def where(self, condition, *values):
-        self.conditions.append(condition)
-        self.where_values.extend(values)
-
-    def order(self, key, reverse=False):
-        if reverse:
-            self.order_key = '{} DESC'.format(key)
-        else:
-            self.order_key = key
-
-    def query(self):
-        if self.fields:
-            field_string = ','.join(self.fields)
-        else:
-            field_string = ''
-
-        if self.conditions:
-            condition_string = 'WHERE ' + ' AND '.join(self.conditions)
-        else:
-            condition_string = ''
-
-        if self.order_key:
-            order_string = 'ORDER BY {}'.format(self.order_key)
-        else:
-            order_string = ''
-
-        if self._limit:
-            limit_string = 'LIMIT {}'.format(self._limit)
-        else:
-            limit_string = ''
-
-        if self._offset:
-            offset_string = 'OFFSET {}'.format(self._offset)
-        else:
-            offset_string = ''
-
-        if self.action in ('SELECT', 'DELETE'):
-            return '''{action} {field_string} FROM {table} {condition_string} {order_string} {limit_string} {offset_string}'''.format(
-                action=self.action,
-                field_string=field_string,
-                table=self.table,
-                condition_string=condition_string,
-                order_string=order_string,
-                limit_string=limit_string,
-                offset_string=offset_string,
-                )
-        elif self._is_inserting():
-            insert_field_string = ', '.join(self.insert_fields)
-
-            return '{action} INTO {table}({insert_field_string}) VALUES ({insert_expressions})'.format(
-                action=self.action,
-                table=self.table,
-                insert_field_string=insert_field_string,
-                insert_expressions=', '.join(self.insert_expressions),
-                )
-        else:
-            raise ValueError(self.action)
-
-    def values(self):
-        return self.insert_values + self.where_values
-
 
 def show_series(db, prefix=None):
     cursor = db.cursor()
