@@ -60,6 +60,14 @@ edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time a
 edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
 edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
 
+status_parser = parsers.add_parser('status', help='Show the status of a playback')
+status_parser.add_argument('name', type=str, help='Name of the playback')
+
+playing_parser = parsers.add_parser('playing', help='Show the status of a playback')
+
+stop_parser = parsers.add_parser('stop', help='Stop a current playback')
+stop_parser.add_argument('playback', type=str, help='Playback that you want to stop')
+
 list_parser = parsers.add_parser('list', help='Add an action to a recipe')
 
 delete_parser = parsers.add_parser('delete', help='Add an action to a recipe')
@@ -72,7 +80,14 @@ show_parser.add_argument('--json', action='store_true', help='Output data as mac
 
 play_parser = parsers.add_parser('play', help='Play a recipe with steps in order')
 play_parser.add_argument('recipe', help='Which recipe to replay', default='DEFAULT')
-play_parser.add_argument('--name', help='Name of the playback (allows for restarting etc)', default='DEFAULT')
+play_parser.add_argument('--name', help='Name of the playback (allows for restarting etc)')
+play_parser.add_argument(
+    '--error-keep',
+    action='store_true',
+    help='Do not delete the playback on error')
+
+status = parsers.add_parser('status', help='Show the current status of playback')
+status.add_argument('playback', type=str)
 
 def ensure_config(config_dir):
     if not os.path.isdir(config_dir):
@@ -98,38 +113,84 @@ def with_data(data_file):
             with open(data_file, 'w') as stream:
                 stream.write(output)
 
-def play(data_path, recipe, name):
-    # If you change the recipe under me you are
-    #    a terrible human being
-
-
+def start_playing(data_path, recipe, name):
     with with_data(data_path) as data:
         playbacks = data.setdefault('playbacks', {})
-
         if name in playbacks:
             raise Exception('There is a already a player called {}. Use a different name'.format(name))
 
         playbacks[name] = dict(start=time.time())
-
         recipe = get_recipe(data, recipe)
-        players = recipe.setdefault('players', list())
-        players.append(name)
+        return recipe
 
+def play(data_path, recipe_name, name, error_keep):
+    # If you change the recipe under me you are
+    #    a terrible human being
+    if name is None:
+        name = recipe_name
 
+    recipe = start_playing(data_path, recipe_name, name)
+
+    try:
+        start_time = time.time()
+        for index, step in enumerate(recipe['steps']):
+            step_start = start_time + step['start_time']
+            time.sleep(max(step_start - start_time, 0))
+            print step['text']
+
+            duration = step_duration(recipe, index)
+
+            with with_data(data_path) as data:
+                stored_step = step.copy()
+                stored_step['started_at'] = time.time()
+                stored_step['duration'] = duration
+                data['playbacks'][name]['step'] = stored_step
+
+        stop(data, name)
+
+        with with_data(data_path) as data:
+            stop(data, name)
+    except:
+        if not error_keep:
+            with with_data(data_path) as data:
+                stop(data, name)
+        raise
+
+def stop(data, playback):
+    del data['playbacks'][playback]
+
+def playback_status(data, playback):
+    playing_step = data['playbacks'][playback]['step']
+    progress = time.time() - playing_step['started_at']
+    duration = playing_step['duration']
+    percent_progress = float(progress) / playing_step['duration'] * 100
+    return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
+
+def playing(data):
+    "Recipes that are currently playing"
+    for name in data['playbacks']:
+        print name
 
 def run(args):
     options = PARSER.parse_args(args)
+    del args
     ensure_config(options.config_dir)
 
     data_path = os.path.join(options.config_dir, 'data.json')
 
     if options.command == 'play':
         # Long-running: can't lock data
-        return play(data_path, options.recipe, options.name)
+        return play(data_path, options.recipe, options.name, options.error_keep)
 
     with with_data(data_path) as data:
         if options.command == 'add':
             return add(data, options.recipe, options.step, options.time)
+        elif options.command == 'playing':
+            return playing(data)
+        elif options.command == 'status':
+            return playback_status(data, options.playback)
+        elif options.command == 'stop':
+            return stop(data, options.playback)
         elif options.command == 'edit':
             return edit(
                 data, options.recipe,
@@ -170,14 +231,15 @@ def add(data, recipe, step, start_time):
     else:
         last_step_time = recipe['steps'][-1]['start_time']
 
+
     if isinstance(start_time, datetime.timedelta):
-        start_time = last_step_time + start_time.total_seconds()
+        start_offset = last_step_time + start_time.total_seconds()
     elif start_time is None:
-        start_time = last_step_time
+        start_offset = last_step_time
     else:
         raise ValueError(start_time)
 
-    recipe['steps'].append(dict(text=step, start_time=start_time))
+    recipe['steps'].append(dict(text=step, start_offset=start_offset))
 
 def edit(data, recipe_name, index=None, text=None, before=None, after=None):
     recipe = get_recipe(data, recipe_name)
