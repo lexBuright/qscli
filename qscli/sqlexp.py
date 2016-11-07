@@ -73,7 +73,7 @@ class Query(object):
 
     def query(self):
         if self.fields:
-            field_string = ','.join(self.fields)
+            field_string = ', '.join(self.fields)
         else:
             field_string = ''
 

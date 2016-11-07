@@ -94,8 +94,12 @@ def get_values(db, series, ids=None):
 
     query.order('time')
 
+    return execute(db, query.query(), query.values())
+
+def execute(db, query, values):
     cursor = db.cursor()
-    cursor.execute(query.query(), query.values())
+    cursor.execute(query, values)
+    LOGGER.debug('Running %r %r', query, values)
     return cursor.fetchall()
 
 def only_show_indexes(iterable, indexes):
@@ -119,14 +123,14 @@ def show(db, series, ids, json_output, indexes=None):
 
             dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
             result.append('{} {} {} {}'.format(dt.isoformat(), ident, series, value))
-        return '\n'.join(result)
+        return '\n'.join(result),
     else:
         result = []
         for time_string, series, ident, value in records:
             dt = pytz.UTC.localize(datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S'), is_dst=None)
             unix_time = calendar.timegm(dt.timetuple())
             result.append(dict(time=unix_time, series=series, id=ident, value=value))
-        return json.dumps(result)
+        return json.dumps(result),
 
 def build_parser():
     parser = argparse.ArgumentParser(description='Very simple command line timeseries')
@@ -212,7 +216,8 @@ def get_agg_func(string):
 def main():
     result = run(sys.argv[1:])
     if result:
-        print result
+        for x in result:
+            print x,
 
 def run(args):
     options = build_parser().parse_args(args)
@@ -248,7 +253,6 @@ def run(args):
     else:
         raise ValueError(options.command)
 
-epoch = datetime.datetime(1970, 1, 1)
 def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs):
     for row in aggregate_values(db, series, period, funcs, include_empty=include_missing):
         dt, series = row[:2]
@@ -258,15 +262,16 @@ def aggregate(db, series, period, record_stream, missing_value, include_missing,
         dt_time = time.mktime(dt.timetuple())
         if record_stream:
             value = values[0] if len(values) == 1 else values
-            return  json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
+            yield json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
         else:
             result = []
-            result.append('{} {}\n'.format(dt, series))
+            result.append('{} {} '.format(dt, series))
             for value in values:
                 result.append('{} '.format(value))
             result.append('\n')
-            return ''.join(result)
+            yield ''.join(result)
 
+EPOCH = datetime.datetime(1970, 1, 1)
 def aggregate_values(db, series, period, agg_funcs, include_empty=False):
     # Could be done in sql but this would
     #   be less generalisable
@@ -276,8 +281,8 @@ def aggregate_values(db, series, period, agg_funcs, include_empty=False):
     group_values = collections.defaultdict(list)
     for time_string, series, _ident, value in get_values(db, series):
         dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-        seconds_since_epoch = (dt - epoch).total_seconds() // period.total_seconds() * period.total_seconds()
-        period_dt = epoch + datetime.timedelta(seconds=seconds_since_epoch)
+        seconds_since_epoch = (dt - EPOCH).total_seconds() // period.total_seconds() * period.total_seconds()
+        period_dt = EPOCH + datetime.timedelta(seconds=seconds_since_epoch)
         if period_dt != group_dt:
             LOGGER.debug('Group values %r %r', period_dt, group_values)
             for series in sorted(group_values):
@@ -318,7 +323,6 @@ def parse_ident(ident_string):
         return IdentUnion(None, None)
 
 def delete(db, series, ids=None, indexes=None):
-    print 'IDS', ids
     if not ids and not indexes:
         raise ValueError()
 
@@ -335,7 +339,6 @@ def delete(db, series, ids=None, indexes=None):
         query.where_expression(id_filter)
 
         cursor = db.cursor()
-        print query.query()
         cursor.execute(query.query(), query.values())
         db.commit()
     else:
@@ -373,7 +376,7 @@ def show_series(db, prefix=None):
             if not name.startswith(prefix):
                 continue
         result.append("{}\n".format(name))
-    return ''.join(result)
+    return ''.join(result),
 
 if __name__ == '__main__':
 	main()

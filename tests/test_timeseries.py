@@ -4,7 +4,6 @@ import tempfile
 import unittest
 import sqlite3
 
-
 from qscli import qstimeseries
 
 class TimeseriesTest(unittest.TestCase):
@@ -16,7 +15,9 @@ class TimeseriesTest(unittest.TestCase):
 
     def run_cli(self, *args):
         new_args = ('--config-dir', self.direc) + tuple(args)
-        return qstimeseries.run(new_args)
+        result = qstimeseries.run(new_args)
+        if result is not None:
+            return ''.join(result)
 
     def test_basic(self):
         self.run_cli('append', 'metric', '1')
@@ -91,14 +92,6 @@ class TimeseriesTest(unittest.TestCase):
         entry1, entry2 = json.loads(self.run_cli('show', '--series', 'metric', '--index', '-1', '--index', '0', '--json'))
         self.assertEquals(entry1['value'], 3)
         self.assertEquals(entry2['value'], 1)
-
-
-
-
-
-
-
-
 
 if __name__ == '__main__':
     unittest.main()
