@@ -12,15 +12,17 @@ import argparse
 import contextlib
 import datetime
 import json
+import logging
 import os
-import shutil
 import sys
-import tempfile
 import threading
 import time
 import unittest
 
 import fasteners
+
+LOGGER = logging.getLogger()
+
 
 UNIT_PERIODS = {
     's': datetime.timedelta(seconds=1),
@@ -29,6 +31,7 @@ UNIT_PERIODS = {
     'd': datetime.timedelta(days=1),
 }
 
+
 def parse_time(time_string):
     if time_string.startswith('+'):
         unit = time_string[-1]
@@ -36,21 +39,36 @@ def parse_time(time_string):
     else:
         raise ValueError(time_string)
 
+def parse_absolute_time(time_string):
+    return parse_time('+' + time_string).total_seconds()
+
 DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qsrecipe')
 
 PARSER = argparse.ArgumentParser(description='Plan a sequence of activities')
 PARSER.add_argument('--config-dir', type=str, default=DEFAULT_CONFIG_DIR)
 parsers = PARSER.add_subparsers(dest='command')
+
 add_parser = parsers.add_parser('add', help='Add an action to a recipe')
 add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 add_parser.add_argument('step', type=str, help='Recipe step')
 add_parser.add_argument('--time', type=parse_time, help='Time delay before this step')
 
+edit_parser = parsers.add_parser('edit', help='Edit an action in a recipe')
+edit_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
+edit_parser.add_argument('--index', '-i', type=int, help='Operate on the action with this index')
+edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time after this event before next action')
+edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
+edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
+
 list_parser = parsers.add_parser('list', help='Add an action to a recipe')
+
+delete_parser = parsers.add_parser('delete', help='Add an action to a recipe')
+delete_parser.add_argument('recipes', type=str, nargs='*')
 
 parsers.add_parser('test', help='Run the tests')
 show_parser = parsers.add_parser('show', help='Show a recipe')
 show_parser.add_argument('recipe', type=str)
+show_parser.add_argument('--json', action='store_true', help='Output data as machine-readable json')
 
 play_parser = parsers.add_parser('play', help='Play a recipe with steps in order')
 play_parser.add_argument('recipe', help='Which recipe to replay', default='DEFAULT')
@@ -60,14 +78,12 @@ def ensure_config(config_dir):
     if not os.path.isdir(config_dir):
        os.mkdir(config_dir)
 
-
 def read_json(filename):
     if os.path.exists(filename):
         with open(filename) as stream:
             return json.loads(stream.read())
     else:
         return dict()
-
 
 DATA_LOCK = threading.Lock()
 @contextlib.contextmanager
@@ -112,15 +128,27 @@ def run(args):
         return play(data_path, options.recipe, options.name)
 
     with with_data(data_path) as data:
-
         if options.command == 'add':
             return add(data, options.recipe, options.step, options.time)
+        elif options.command == 'edit':
+            return edit(
+                data, options.recipe,
+                index=options.index,
+                after=options.after,
+                before=options.before,
+                text=options.text)
         elif options.command == 'list':
             return list_recipes(data)
+        elif options.command == 'delete':
+            return delete_recipes(data, options.recipes)
         elif options.command == 'show':
-            return show(data, options.recipe)
+            return show(data, options.recipe, options.json)
         else:
             raise ValueError(options.command)
+
+def delete_recipes(data, recipes):
+    for recipe in recipes:
+        data.get('recipes', {}).pop(recipe)
 
 def list_recipes(data):
     result = []
@@ -151,6 +179,38 @@ def add(data, recipe, step, start_time):
 
     recipe['steps'].append(dict(text=step, start_time=start_time))
 
+def edit(data, recipe_name, index=None, text=None, before=None, after=None):
+    recipe = get_recipe(data, recipe_name)
+    step = find_step(recipe, index=index)
+    step_index = recipe['steps'].index(step)
+
+    if text:
+        step['text'] = text
+
+    if before:
+        shift = before - step_duration(recipe, index - 1)
+        LOGGER.debug('Shifting before by %r', shift)
+        for step in recipe['steps'][index:]:
+            step['start_time'] += shift
+
+    if after:
+        shift = after - step_duration(recipe, index)
+        LOGGER.debug('Shifting after by %r', shift)
+        for step in recipe['steps'][index + 1:]:
+            step['start_time'] += shift
+
+def find_step(recipe, index):
+    return recipe['steps'][index]
+
+def step_time(recipe, index):
+    if index < 0:
+        return 0
+    else:
+       return recipe['steps'][index]['start_time']
+
+def step_duration(recipe, index):
+    return (step_time(recipe, index + 1) - step_time(recipe, index))
+
 def format_seconds(seconds):
     seconds = int(seconds)
     minutes, seconds = seconds // 60, seconds % 60
@@ -163,80 +223,31 @@ def format_seconds(seconds):
         result = '{}h {}'.format(hours, result)
     return result
 
-def show(data, recipe):
+def show(data, recipe, is_json):
     recipe = get_recipe(data, recipe)
-    result = []
-    for step in recipe['steps']:
-        result.append((format_seconds(step['start_time']), step['text']))
 
-    time_column_width = max(len(r[0]) for r in result) + 2
-    output = []
-    for time_string, text in result:
-        time_string += ' ' * (time_column_width - len(time_string))
-        output.append('{}{}'.format(time_string, text))
+    if is_json:
+        result = dict(steps=[])
+        for step in recipe['steps']:
+            # Add an indirection layer between
+            #   external and internal format
+            result['steps'].append(dict(
+                text=step['text'],
+                start_time=step['start_time']
+            ))
+        return json.dumps(result)
+    else:
+        result = []
+        for step in recipe['steps']:
+            result.append((format_seconds(step['start_time']), step['text']))
 
-    return '\n'.join(output)
+        time_column_width = max(len(r[0]) for r in result) + 2
+        output = []
+        for time_string, text in result:
+            time_string += ' ' * (time_column_width - len(time_string))
+            output.append('{}{}'.format(time_string, text))
 
-class TestRecipes(unittest.TestCase):
-    def setUp(self):
-        self.direc = tempfile.mkdtemp()
-
-    def tearDown(self):
-        shutil.rmtree(self.direc)
-
-    def run_cli(self, args):
-        new_args = ('--config-dir', self.direc) + tuple(args)
-        return run(new_args)
-
-    def test_list(self):
-        self.run_cli(['add', 'breakfast', 'eat'])
-        self.run_cli(['add', 'work', 'do'])
-        self.run_cli(['add', 'lunch', 'eat'])
-        self.run_cli(['add', 'drinks', 'drink'])
-        self.run_cli(['add', 'bed', 'sleep'])
-        lines = self.run_cli(['list']).splitlines()
-        self.assertTrue([l.startswith('breakfast') for l in lines])
-        self.assertTrue([l.startswith('work') for l in lines])
-        self.assertTrue([l.startswith('lunch') for l in lines])
-        self.assertTrue([l.startswith('drinks') for l in lines])
-        self.assertTrue([l.startswith('bed') for l in lines])
-
-
-    def test_show(self):
-        self.run_cli(['add', 'omelete', 'break eggs'])
-        self.run_cli(['add', 'omelete', 'Whisk', '--time', '+10s'])
-        self.run_cli(['add', 'omelete', 'Add oil', '--time', '+5s'])
-        self.run_cli(['add', 'omelete', 'Heat pan', '--time', '+5s'])
-        self.run_cli(['add', 'omelete', 'Add eggs', '--time', '+2m'])
-        self.run_cli(['add', 'omelete', 'Finished', '--time', '+3m'])
-
-        expected = '''\
-0s      break eggs
-10s     Whisk
-15s     Add oil
-20s     Heat pan
-2m 20s  Add eggs
-5m 20s  Finished'''
-
-        self.assertEquals(expected, self.run_cli(['show', 'omelete']))
-
-    # def test_playback(self):
-    #     self.run_cli(['add', 'recipe', 'start'])
-    #     self.run_cli(['add', 'recipe', 'step 1', '--time', '+1s'])
-    #     self.run_cli(['add', 'recipe', 'step 2', '--time', '+2s'])
-
-    #     def read(it):
-    #         return next(it)
-
-    #     it = peak_iter(self.run_cli(['play', 'recipe']))
-    #     self.assertEquals(read(it), 'start')
-    #     self.set_time(1.1)
-    #     self.assertEquals(read(it), 'step 1')
-    #     self.set_time(2)
-    #     self.assertEquals(read(it), None)
-    #     self.set_time(3.1)
-    #     self.assertEquals(read(it), 'step 2')
-
+        return '\n'.join(output)
 
 def main():
     args = PARSER.parse_args()
@@ -244,7 +255,9 @@ def main():
         sys.argv = sys.argv[1:]
         unittest.main()
     else:
-        run(sys.argv[1:])
+        result = run(sys.argv[1:])
+        if result is not None :
+            print result
 
 
 if __name__ == '__main__':
