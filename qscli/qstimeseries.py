@@ -75,17 +75,20 @@ def append(db, series, value_string, value_type, ident, time_value, update):
         raise
     db.commit()
 
-def get_values(db, series, ident=None):
+def get_values(db, series, ids=None):
     query = StupidQuery(
         action='SELECT',
         fields=('time', 'series', "coalesce(given_ident, 'internal--' || id)", "coalesce(float_value, string_value)"))
 
     if series is not None:
         query.where_equals('series', series)
-    if ident and ident.given_id is not None:
-        query.where_equals('given_ident', ident.given_id)
-    if ident and ident.native_id:
-        query.where_equals('id', ident.native_id)
+
+    if ids:
+        for ident in ids:
+            if ident.given_id is not None:
+                query.where_equals('given_ident', ident.given_id)
+            if ident.native_id:
+                query.where_equals('id', ident.native_id)
 
     query.order('time')
 
@@ -103,8 +106,8 @@ def only_show_indexes(iterable, indexes):
             if index in indexes:
                 yield x
 
-def show(db, series, ident, json_output, indexes=None):
-    records = get_values(db, series, ident=ident)
+def show(db, series, ids, json_output, indexes=None):
+    records = get_values(db, series, ids=ids)
     records = only_show_indexes(records, indexes) if indexes is not None else records
     if not json_output:
         result = []
@@ -159,7 +162,7 @@ def build_parser():
 
     show_command = parsers.add_parser('show', help='Show the values in a series')
     show_command.add_argument('--series', type=str, help='Only show this timeseries')
-    show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident')
+    show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident', action='append')
     show_command.add_argument('--json', action='store_true', help='Output in machine readable json')
     show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
     show_command.add_argument('--delete', help='Delete the matches entries', action='store_true')
@@ -167,7 +170,7 @@ def build_parser():
     delete_parser = parsers.add_parser('delete', help='Delete a value from a timeseries')
     delete_parser.add_argument('series', type=str, help='Which series to delete from')
     mx = delete_parser.add_mutually_exclusive_group(required=True)
-    mx.add_argument('--id', type=parse_ident, help='Delete entry with this id', dest='ident')
+    mx.add_argument('--id', type=parse_ident, help='Delete entry with this id', dest='ident', action='append')
     return parser
 
 PERIODS = {
@@ -312,19 +315,25 @@ def parse_ident(ident_string):
     else:
         return IdentUnion(None, None)
 
-def delete(db, series, ident=None, indexes=None):
-    if not ident and not indexes:
+def delete(db, series, ids=None, indexes=None):
+    print 'IDS', ids
+    if not ids and not indexes:
         raise ValueError()
 
-    if indexes is None:
+    if ids is not None :
         query = StupidQuery(action='DELETE')
-        if ident.native_id is not None:
-            query.where_equals('id', ident.native_id)
+        id_filter = StupidOr()
+        for ident in ids:
+            if ident.native_id is not None:
+                id_filter.add_equals('id', ident.native_id)
 
-        if ident.given_id:
-            query.where_equals('given_ident', ident.given_id)
+            if ident.given_id:
+                id_filter.add_equals('given_ident', ident.given_id)
+
+        query.where_expression(id_filter)
 
         cursor = db.cursor()
+        print query.query()
         cursor.execute(query.query(), query.values())
         db.commit()
     else:
@@ -350,6 +359,27 @@ def delete(db, series, ident=None, indexes=None):
 
             cursor.execute(query.query(), query.values())
             db.commit()
+
+class StupidExpression(object):
+    "An SQL value"
+
+class StupidOr(StupidExpression):
+    # And we continue the pointless task of slowly
+    #   reimplementing sqlalchemy :/
+    #  (But while allowing our own connetion handling)
+    def __init__(self):
+        self._expressions = []
+        self._values = []
+
+    def add_equals(self, key, value):
+        self._values.append(value)
+        self._expressions.append('{} = ?'.format(key))
+
+    def query(self):
+        return '(' +  ' OR '.join(self._expressions) + ')'
+
+    def values(self):
+        return self._values
 
 class StupidQuery(object):
     # Braindead orm, because using sqlalchemy isn't worthwhile
@@ -396,6 +426,10 @@ class StupidQuery(object):
     def where_equals(self, key, value):
         self.conditions.append('{} = ?'.format(key))
         self.where_values.append(value)
+
+    def where_expression(self, expression):
+        self.conditions.append(expression.query())
+        self.where_values.extend(expression.values())
 
     def offset(self, offset):
         self._offset = offset

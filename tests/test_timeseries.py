@@ -50,6 +50,15 @@ class TimeseriesTest(unittest.TestCase):
         value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
         self.assertEquals(value['value'], 2)
 
+    def test_multi_delete(self):
+        self.run_cli('append', 'metric', '1')
+        self.run_cli('append', 'metric', '2')
+        self.run_cli('append', 'metric', '3')
+
+        self.run_cli('delete', 'metric', '--id', 'internal--1', '--id', 'internal--3')
+        value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
+        self.assertEquals(value['value'], 2)
+
     def test_show_internal(self):
         self.run_cli('append', 'metric', '1')
         self.run_cli('append', 'metric', '2')
