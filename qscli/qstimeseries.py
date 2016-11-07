@@ -49,21 +49,30 @@ def ensure_database(config_dir):
 
     return sqlite3.connect(data_file)
 
-def append(db, series, value_string, value_type, ident, time_value):
+def append(db, series, value_string, value_type, ident, time_value, update):
     if ident and ident.native_id is not None:
         raise Exception('internal-- ids reserved for internal assignment')
     value = value_type(value_string)
 
     value_field = {str: 'string_value', float: 'float_value'}[value_type]
 
-    query = StupidQuery(action='INSERT')
+    if update:
+        query = StupidQuery(action='INSERT OR REPLACE')
+    else:
+        query = StupidQuery(action='INSERT')
+
     query.insert_field('series', series)
     query.insert_field(value_field, value)
     query.insert_field('given_ident', ident and ident.given_id)
     if time_value is not None:
         query.insert_field_expression('time', "datetime(?, 'unixepoch')", time_value)
     cursor = db.cursor()
-    cursor.execute(query.query(), query.values())
+    try:
+        cursor.execute(query.query(), query.values())
+    except:
+        print query.query()
+        db.rollback()
+        raise
     db.commit()
 
 def get_values(db, series, ident=None):
@@ -126,6 +135,7 @@ def build_parser():
     append_command.add_argument('--string', action='store_const', dest='value_type', const=str, default=float)
     append_command.add_argument('--id', type=parse_ident, help='Name a value', dest='ident')
     append_command.add_argument('--time', type=float, help='Insert the value at this unix time (rather than the current time)')
+    append_command.add_argument('--update', action='store_true', help='Update existing values rather than erroring out')
     append_command.add_argument('value', type=str)
 
     series_command = parsers.add_parser('series', help='List the series')
@@ -187,14 +197,12 @@ AGGREGATION_FUNCTIONS = {
     'sorted_values': sorted_values,
 }
 
-
 def time_period(string):
     time_string, unit = string[:-1], string[-1]
     return int(time_string) * PERIODS[unit]
 
 def get_agg_func(string):
     return AGGREGATION_FUNCTIONS[string]
-
 
 def main():
     result = run(sys.argv[1:])
@@ -214,7 +222,7 @@ def run(args):
 
     db = ensure_database(config_dir)
     if options.command == 'append':
-        return append(db, options.series, options.value, options.value_type, options.ident, options.time)
+        return append(db, options.series, options.value, options.value_type, options.ident, options.time, options.update)
     elif options.command == 'show':
 
         if options.delete:
@@ -375,11 +383,15 @@ class StupidQuery(object):
         self.insert_field_expression(field, '?', value)
 
     def insert_field_expression(self, field, expression, *values):
-        if self.action != 'INSERT':
-            raise Exception('Can only use insert_field if inserting')
+        if not self._is_inserting():
+            raise Exception('Can only use insert_field if inserting ({})'.format(self.action))
+
         self.insert_fields.append(field)
         self.insert_expressions.append(expression)
         self.insert_values.extend(values)
+
+    def _is_inserting(self):
+        return self.action in ('INSERT', 'INSERT OR REPLACE')
 
     def where_equals(self, key, value):
         self.conditions.append('{} = ?'.format(key))
@@ -437,18 +449,17 @@ class StupidQuery(object):
                 limit_string=limit_string,
                 offset_string=offset_string,
                 )
-        elif self.action == 'INSERT':
+        elif self._is_inserting():
             insert_field_string = ', '.join(self.insert_fields)
-            value_placeholders = ', '.join(['?'] * len (self.insert_fields))
 
-            return 'INSERT INTO {table}({insert_field_string}) VALUES ({insert_expressions})'.format(
+            return '{action} INTO {table}({insert_field_string}) VALUES ({insert_expressions})'.format(
+                action=self.action,
                 table=self.table,
                 insert_field_string=insert_field_string,
                 insert_expressions=', '.join(self.insert_expressions),
                 )
-
         else:
-            raise ValueError(action)
+            raise ValueError(self.action)
 
     def values(self):
         return self.insert_values + self.where_values

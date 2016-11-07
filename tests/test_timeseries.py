@@ -2,9 +2,10 @@ import json
 import shutil
 import tempfile
 import unittest
+import sqlite3
+
 
 from qscli import qstimeseries
-
 
 class TimeseriesTest(unittest.TestCase):
     def setUp(self):
@@ -30,7 +31,16 @@ class TimeseriesTest(unittest.TestCase):
         self.assertEquals(value['time'], 1000)
         self.assertEquals(value['value'], 1)
 
+    def test_append_update(self):
+        self.run_cli('append', 'metric', '1', '--id', 'one')
 
+        # I should error out
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.run_cli('append', 'metric', '1', '--id', 'one')
+
+        self.run_cli('append', 'metric', '1000', '--id', 'one', '--update')
+        value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
+        self.assertEquals(value['value'], 1000)
 
     def test_delete_internal(self):
         self.run_cli('append', 'metric', '1')
