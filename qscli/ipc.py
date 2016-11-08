@@ -73,7 +73,7 @@ class CliClient(object):
         self._proc.stdin.write(command_string + '\n')
         self._proc.stdin.flush()
         reply = self._proc.stdout.readline()
-        LOGGER.debug('Got reply')
+        LOGGER.debug('Got reply %r', reply)
         data = json.loads(reply)
         if not data['return_code'] == 0:
             raise Exception('Command errored out {!r} {!r}'.format(command_string, data))

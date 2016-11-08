@@ -6,12 +6,14 @@ import subprocess
 import logging
 
 from .generic_store import DataPoint, GenericTimeseriesStore
+from .. import ipc
 
 LOGGER = logging.getLogger('timeseries_store')
 
 class TimeSeriesStore(GenericTimeseriesStore):
     def __init__(self, config_dir):
         self._config_dir = config_dir
+        self._client = None
 
     @staticmethod
     def initialize(metric_data):
@@ -56,13 +58,21 @@ class TimeSeriesStore(GenericTimeseriesStore):
             return json.loads(raw_json)[0]['value']
 
     def timeseries(self, *args):
-        return shell_collect(['qstimeseries', '--config-dir', self._config_dir] + map(str, args))
+        if self._client is None:
+            self._client = ipc.CliClient(['qstimeseries', '--config-dir', self._config_dir])
+            self._client.initialize()
+        self._client.run(map(str, args))
 
     def get_has_ids(self, metric_data):
         return any(not entry.id.startswith('internal--') for entry in self.get_timeseries(metric_data))
 
-    def update(self, metric_data, value, ident):
-        self.timeseries('append', metric_data['name'], '--id', ident, '--update', value)
+    def update(self, metric_data, value, ident, time=None):
+        if time:
+            time_args = ['--time', time]
+        else:
+            time_args = []
+
+        self.timeseries('append', metric_data['name'], '--id', ident, '--update', value, *time_args)
 
     def update_ids(self, metric_data, values_by_id):
         for ident, value in values_by_id.items():

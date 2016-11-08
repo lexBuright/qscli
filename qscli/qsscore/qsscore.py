@@ -7,6 +7,7 @@ database of ELK (elasticsearch logstash kibana) if you are being serious.
 """
 
 import argparse
+import collections
 import contextlib
 import datetime
 import json
@@ -18,16 +19,10 @@ import jsdb
 import jsdb.leveldict
 import jsdb.python_copy
 
+from . import (config, native_store, parse_utils, statistics, store,
+               timeseries_store)
 from .. import ipc
 from ..symbol import Symbol
-
-from . import store
-from . import config
-from . import statistics
-from . import parse_utils
-from . import native_store
-from . import timeseries_store
-
 
 LOGGER = logging.getLogger()
 
@@ -124,7 +119,10 @@ def with_jsdb_data(data_file):
 
 with_data = with_jsdb_data
 
-DATA_VERSION = 1
+DATA_VERSION = 2
+OLD_COMBINED_DATA_VERSION = 1
+
+Objects = collections.namedtuple('Objects', 'ts_store scorer stats data_store config_obj')
 
 def run(options, stdin):
     if not os.path.isdir(options.config_dir):
@@ -142,10 +140,9 @@ def run(options, stdin):
     data_store = store.Store(ts_store)
     config_obj = config.Config(ts_store)
 
+    objects = Objects(ts_store=ts_store, scorer=scorer, stats=stats, data_store=data_store, config_obj=config_obj)
+
     with with_data(data_file) as data:
-        # new_data = migrate_data(data, DATA_VERSION)
-        # data.clear()
-        # data.update(**new_data)
         if options.command == 'list':
             metric_names = sorted(data.get('metrics', dict()))
             return '\n'.join(metric_names)
@@ -163,7 +160,7 @@ def run(options, stdin):
         elif options.command == 'backup':
             return backup(data)
         elif options.command == 'restore':
-            restore(data, stdin.read())
+            restore(objects, data, stdin.read())
             return ''
         elif options.command == 'records':
             if options.days_ago is not None:
@@ -208,10 +205,28 @@ def backup(data):
     backup_string = json.dumps(data)
     return backup_string
 
-def restore(data, backup_filename):
+def restore(obs, data, raw_saved):
     data.clear()
-    backup_data = json.loads(backup_filename)
-    data.update(**backup_data)
+    saved = json.loads(raw_saved)
+    if saved['version'] == OLD_COMBINED_DATA_VERSION:
+        for metric_name, backup_metric_data in saved['metrics'].items():
+            if set(backup_metric_data.keys())  <= ['values', 'ident_type']:
+            	raise ValueError(backup_metric_data.keys())
+
+
+            metric_data = obs.config_obj.get_metric_data(data, metric_name)
+
+            metric_data['ident_type'] = backup_metric_data.get('ident_type')
+            obs.ts_store.initialize(metric_data)
+            for entry in backup_metric_data['values']:
+                ident = entry.get('id')
+                if ident is not None:
+                    obs.ts_store.store(metric_data, entry['time'], entry['value'])
+                else:
+                    obs.ts_store.update(metric_data, entry['value'], ident, time=entry['time'])
+
+
+
 
 class Scorer(object):
     def __init__(self, ts_store):

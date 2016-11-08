@@ -20,6 +20,7 @@ import time
 import pytz
 
 from . import sqlexp
+from . import ipc
 
 LOGGER = logging.getLogger()
 
@@ -139,6 +140,8 @@ def build_parser():
 
     parsers = parser.add_subparsers(dest='command')
 
+    append_command = parsers.add_parser('daemon', help='Start a daemon to run commands')
+
     append_command = parsers.add_parser('append', help='Add a value')
     append_command.add_argument('series', type=str, help='Timeseries')
     append_command.add_argument('--string', action='store_const', dest='value_type', const=str, default=float)
@@ -221,7 +224,12 @@ def main():
 
 def run(args):
     options = build_parser().parse_args(args)
-    del args
+    if options.command == 'daemon':
+        return ipc.run_server(build_parser(), run_options)
+    else:
+        return run_options(options)
+
+def run_options(options):
     config_dir = options.config_dir or DEFAULT_CONFIG_DIR
 
     if options.debug:
