@@ -102,11 +102,22 @@ class TestCli(unittest.TestCase):
     def test_delete_record(self):
         self.cli(['store', 'first-metric', '121'])
         self.cli(['store', 'first-metric', '131'])
+
         self.assertEquals(len(self.cli(['log']).splitlines()), 2)
         self.cli(['log', '--index', '-1', '--delete'])
         self.assertEquals(len(self.cli(['log']).splitlines()), 1)
         self.assertTrue('121' in self.cli(['log']))
         self.assertTrue('131' not in self.cli(['log']))
+
+    def test_multidelete(self):
+        self.cli(['store', 'first-metric', '111'])
+        self.cli(['store', 'first-metric', '222'])
+        self.cli(['store', 'first-metric', '333'])
+        self.cli(['log', '--index', '0', '--index', '-1', '--delete'])
+        self.assertEquals(len(self.cli(['log']).splitlines()), 1)
+        self.assertTrue('222' in self.cli(['log']))
+        self.assertTrue('111' not in self.cli(['log']))
+        self.assertTrue('333' not in self.cli(['log']))
 
     def test_statistics(self):
         self.cli(['store', 'metric', '1'])
@@ -169,7 +180,11 @@ class TestCli(unittest.TestCase):
         backup_string = self.cli(['backup'])
 
         for filename in os.listdir(self._config_dir):
-            shutil.rmtree(os.path.join(self._config_dir, filename))
+            full_path = os.path.join(self._config_dir, filename)
+            if os.path.isdir(full_path):
+                shutil.rmtree(full_path)
+            else:
+                os.unlink(full_path)
 
         self.assertEqual(self.cli(['list']), '')
 
