@@ -26,6 +26,8 @@ from . import config
 from . import statistics
 from . import parse_utils
 from . import native_store
+from . import timeseries_store
+
 
 LOGGER = logging.getLogger()
 
@@ -133,7 +135,8 @@ def run(options, stdin):
 
     data_file = os.path.join(options.config_dir, 'data.jsdb')
 
-    ts_store = native_store.NativeTimeSeriesStore(options.config_dir)
+    #ts_store = native_store.NativeTimeSeriesStore(options.config_dir)
+    ts_store = timeseries_store.TimeSeriesStore(options.config_dir)
     scorer = Scorer(ts_store)
     stats = statistics.Statistics(ts_store)
     data_store = store.Store(ts_store)
@@ -150,7 +153,7 @@ def run(options, stdin):
             return data_store.log_action(data, options, delete=options.delete)
         elif options.command == 'delete':
             metrics = data.get('metrics', dict())
-            metrics.pop(options.metric)
+            metrics.pop(options.metric, True)
             return ''
         elif options.command == 'move':
             metrics = data.get('metrics', dict())

@@ -14,14 +14,14 @@ class Statistics(object):
         self._ts_store = ts_store
 
     def best(self, metric_data):
-        if not self._ts_store.check_if_empty(metric_data):
+        if self._ts_store.check_if_empty(metric_data):
             return None
         else:
             best_record = max(self._ts_store.get_raw_values(metric_data))
             return best_record
 
     def mean(self, metric_data):
-        if not self._ts_store.check_if_empty(metric_data):
+        if self._ts_store.check_if_empty(metric_data):
             return None
         else:
             value = sum(self._ts_store.get_raw_values(metric_data)) / self._ts_store.num_values(metric_data)
@@ -71,6 +71,11 @@ class Statistics(object):
         mean_value = self.mean(metric_data)
         num_values = self._ts_store.num_values(metric_data)
 
+        if self._ts_store.check_if_empty(metric_data):
+            current_value = None
+        else:
+            current_value = self._ts_store.get_value(metric_data, ident, index=index)
+
         return dict(
             mean=mean_value,
             best=self.best(metric_data),
@@ -84,7 +89,7 @@ class Statistics(object):
             sparkline=sparkline,
             timeseries=timeseries,
             best_ratio=self.best_ratio(metric_data, index=index),
-            value = self._ts_store.get_value(metric_data, ident, index=index)
+            value=current_value
         )
 
     def get_timeseries(self, metric_data, ident, index, num_values):
@@ -134,7 +139,9 @@ class Statistics(object):
                 return 'No data'
 
     def rank(self, metric_data, ident=None, index=0):
-        LOGGER.debug('Rank')
+        if self._ts_store.check_if_empty(metric_data):
+            return None
+
         result = 0
         last = self._ts_store.get_value(metric_data, ident, index=index)
         for value in self._ts_store.get_raw_values(metric_data):

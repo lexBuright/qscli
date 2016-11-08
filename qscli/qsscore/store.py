@@ -52,6 +52,8 @@ class Store(object):
     def store_csv(self, metric_data, csv_string):
         entries = list(csv.reader(StringIO.StringIO(csv_string)))
         value_by_id = dict(entries)
+        LOGGER.debug('Updating %r', value_by_id)
+
         self._ts_store.initialize(metric_data)
         self._ts_store.update_ids(metric_data, value_by_id)
 

@@ -4,9 +4,9 @@ class Config(object):
     def __init__(self, ts_store):
         self._ts_store = ts_store
 
-    def get_metric_data(self, data, metric):
+    def get_metric_data(self, data, metric_name):
         metrics = data.setdefault('metrics', dict())
-        metric_data = metrics.setdefault(metric, dict() )
+        metric_data = metrics.setdefault(metric_name, dict(name=metric_name))
         self._ts_store.initialize(metric_data)
         return metric_data
 
