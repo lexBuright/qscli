@@ -29,7 +29,8 @@ def run_server(parser, run_function):
         command = _tokenize_command(command_string.strip('\n'))
         try:
             options = parser.parse_args(command)
-            result = ''.join(run_function(options))
+            result_list = run_function(options)
+            result = ''.join(result_list) if result_list is not None else ''
         except BaseException:
             print json.dumps(dict(return_code=1, output='', error=traceback.format_exc()))
         else:
