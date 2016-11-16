@@ -218,8 +218,9 @@ class Watch(object):
             yield '\n'
             while True:
                 self.time_mod.sleep(0.1)
+                output = self.show_raw(clock_name, json_output).strip()
                 yield '\r'
-                yield self.show_raw(clock_name, json_output).strip()
+                yield output
         else:
             yield self.show_raw(clock_name, json_output)
 
