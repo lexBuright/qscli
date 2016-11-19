@@ -35,7 +35,7 @@ def main():
         if periods:
             confidences = list(timeseries_confidences(frequencies, args.confidence))
             for index, triple in enumerate(confidences):
-                (lower, mid, upper) = triple
+                (lower, _mid, upper) = triple
                 if (upper - lower) / 2.0 < args.tolerance:
                     output = 'GOOD {}'.format(format_triple(index, triple, periods))
                     print '\r' + output,
@@ -47,7 +47,7 @@ def main():
                 else:
                     temp = [((upper - lower), i) for i, (lower, _mid, upper) in list(enumerate(confidences))]
                     _, index = min(temp)
-                    triples = confidences[index]
+                    triple = confidences[index]
                     output = 'BAD  {}'.format(format_triple(index, triple, periods))
                     print '\r' + output,
 
