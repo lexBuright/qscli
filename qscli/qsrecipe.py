@@ -44,6 +44,7 @@ def parse_absolute_time(time_string):
 DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qsrecipe')
 
 PARSER = argparse.ArgumentParser(description='Plan a sequence of activities')
+PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 PARSER.add_argument('--config-dir', type=str, default=DEFAULT_CONFIG_DIR)
 parsers = PARSER.add_subparsers(dest='command')
 
@@ -89,7 +90,7 @@ play_parser.add_argument('--name', help='Name of the playback (allows for restar
 play_parser.add_argument(
     '--poll-period', '-p', type=float,
     help='How long to wait before checking if we have stopped',
-    default=10)
+    default=5)
 play_parser.add_argument(
     '--error-keep',
     action='store_true',
@@ -158,17 +159,21 @@ class Player(object):
                 next_step['index'] = index
                 next_step['abandoned_at'] = None
                 next_step['notes'] = []
+                next_step['finished'] = False
 
                 step_start = step_start + next_step['start_offset'] / self._multiplier
                 try:
+                    LOGGER.debug('Waiting for something to happen...')
                     self.wait_until(step_start)
-                except (SkippedStep, AbandonedStep):
-                    pass
+                except (SkippedStep, AbandonedStep) as ex:
+                    LOGGER.debug('Step skipped or abanadoned {}'.format(ex))
                 except AbandonRecipe:
                     break
 
                 next_step['started_at'] = time.time()
 
+
+                LOGGER.debug('Setting step %r', next_step['text'])
                 self.next_step(next_step)
                 print next_step['text']
                 del next_step
@@ -223,6 +228,7 @@ class Player(object):
             recipe = get_recipe(data, self._recipe_name)
             playbacks[self._name] = dict(
                 start=time.time(),
+                step=None,
                 steps=[],
                 recipe=recipe,
                 name=self._name,
@@ -242,6 +248,10 @@ class Player(object):
                         raise SkippedStep()
                     elif playback_data['step']['abandoned_at'] is not None:
                         raise AbandonedStep()
+
+        with self.with_playback_data() as playback_data:
+            if playback_data['step'] is not None:
+                playback_data['step']['finished'] = True
 
 class SkippedStep(Exception):
     "Current step was skipped"
@@ -266,8 +276,6 @@ def stop(data, playback, error=True):
             save_name = '{}-{}'.format(playback_data['name'], i)
             if save_name not in data['past_playbacks']:
                 break
-
-        print 'Saving to', save_name
 
         data['past_playbacks'][save_name] = playback_data
 
@@ -359,19 +367,32 @@ def display_full_playback(playback):
     print 'Recipe', playback['recipe_name']
     print 'Started', datetime.datetime.fromtimestamp(playback['start'])
     for step in playback['steps']:
-        #print step
-        if step['skipped']:
-            print '   ', step['text'], 'SKIPPED'
-        elif step['abandoned_at'] is not None:
-            completed_time = step['abandoned_at'] - step['started_at']
-            percent_completed =  completed_time / step['duration'] * 100
-            print '   ', step['text'], 'ABANDONED', '{:.0f}/{:.0f}({:.0f}%)'.format(completed_time, step['duration'], percent_completed)
-        else:
-            print '   ', step['text'], 'FINISHED',  step['duration']
+        display_step(step)
 
-        for note in step['notes']:
-            note_offset = note['time'] - step['started_at']
-            print '        {:.1f} {}'.format(note_offset, note['note'])
+    if playback.get('step'):
+        print playback['step']
+        display_step(playback['step'])
+
+def display_step(step):
+    if step['skipped']:
+        print '   ', step['text'], 'SKIPPED'
+    elif step['abandoned_at'] is not None:
+        completed_time = step['abandoned_at'] - step['started_at']
+        percent_completed =  completed_time / step['duration'] * 100
+        print '   ', step['text'], 'ABANDONED', '{:.0f}/{:.0f}({:.0f}%)'.format(completed_time, step['duration'], percent_completed)
+
+    elif step['finished']:
+        print '   ', step['text'], 'FINISHED',  step['duration']
+    else:
+        elapsed = time.time() - step['started_at']
+        percent_complete = float(elapsed) / float(step['duration']) * 100
+        print '    {} IN PROGRESS {:.1f}s/{:.1f}s ({:.0f}%)'.format(step['text'], elapsed, step['duration'], percent_complete)
+
+
+    for note in step['notes']:
+        note_offset = note['time'] - step['started_at']
+        print '        {:.1f} {}'.format(note_offset, note['note'])
+
 
 def skip_step(data, playback):
     playback_data = data['playbacks'][playback]
@@ -468,7 +489,6 @@ def step_time(recipe, index):
        return recipe['steps'][index]['start_offset']
 
 def step_duration(recipe, index):
-    print 'Step duration', recipe, index
     next_step_time = step_time(recipe, index + 1)
     current_step_time = step_time(recipe, index)
     return next_step_time - current_step_time
@@ -501,7 +521,6 @@ def show(data, recipe, is_json):
     else:
         result = []
         for step in recipe['steps']:
-            print step
             result.append((format_seconds(step['start_offset']), step['text']))
 
         time_column_width = max(len(r[0]) for r in result) + 2
@@ -514,6 +533,11 @@ def show(data, recipe, is_json):
 
 def main():
     args = PARSER.parse_args()
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
+    LOGGER.debug('Starting')
+
     if args.command == 'test':
         sys.argv = sys.argv[1:]
         unittest.main()
