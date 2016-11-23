@@ -11,6 +11,7 @@ This is a command line utility, you may want to bind commands to keybindings in 
 import argparse
 import contextlib
 import datetime
+import hashlib
 import itertools
 import json
 import logging
@@ -225,15 +226,15 @@ class Player(object):
             if self._name in playbacks:
                 raise Exception('There is a already a player called {}. Use a different name'.format(self._name))
 
-            recipe = get_recipe(data, self._recipe_name)
-            playbacks[self._name] = dict(
-                start=time.time(),
-                step=None,
-                steps=[],
-                recipe=recipe,
-                name=self._name,
-                recipe_name=self._recipe_name)
-            return recipe
+            with with_recipe(data, self._recipe_name) as recipe:
+                playbacks[self._name] = dict(
+                    start=time.time(),
+                    step=None,
+                    steps=[],
+                    recipe=recipe,
+                    name=self._name,
+                    recipe_name=self._recipe_name)
+                return recipe
 
     def wait_until(self, step_start):
         while time.time() < step_start:
@@ -291,7 +292,6 @@ def playback_status(data, playback, verbose):
         return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
     else:
         display_full_playback(data['playbacks'][playback])
-
 
 def playing(data):
     "Recipes that are currently playing"
@@ -357,7 +357,7 @@ def run(args):
 def show_history(data):
     data.setdefault('past_playbacks', dict())
     for name, playback in data['past_playbacks'].items():
-        print name, playback['recipe_name']
+        print name, playback['recipe_name'], playback['recipe'].get('content_id')
 
 def show_history_item(data, name):
     playback = data['past_playbacks'][name]
@@ -413,7 +413,7 @@ def abandon_step(data, playback):
     playback_data['step']['abandoned_at'] = time.time()
 
 def list_playbacks(data, options):
-    playbacks = data.get('finished_playbacks', [])
+    playbacks = data.get('playbacks', [])
     for playback in playbacks:
         print playback
 
@@ -444,48 +444,49 @@ def list_recipes(data):
         result.append(name)
     return '\n'.join(result)
 
-def get_recipe(data, recipe):
+@contextlib.contextmanager
+def with_recipe(data, recipe_name):
     recipes = data.setdefault('recipes', {})
-    recipe = recipes.setdefault(recipe, {})
+    recipe = recipes.setdefault(recipe_name, {})
     steps = recipe.setdefault('steps', [])
-    return recipe
+    yield recipe
+    recipe['content_id'] = recipe_content_id(recipe)
 
-def add(data, recipe, step, start_time):
-    recipe = get_recipe(data, recipe)
+def add(data, recipe_name, step, start_time):
+    with with_recipe(data, recipe_name) as recipe:
+        if not recipe['steps']:
+            last_step_time = 0
+        else:
+            last_step_time = recipe['steps'][-1]['start_offset']
 
-    if not recipe['steps']:
-        last_step_time = 0
-    else:
-        last_step_time = recipe['steps'][-1]['start_offset']
+        if isinstance(start_time, datetime.timedelta):
+            start_offset = last_step_time + start_time.total_seconds()
+        elif start_time is None:
+            start_offset = last_step_time
+        else:
+            raise ValueError(start_time)
 
-    if isinstance(start_time, datetime.timedelta):
-        start_offset = last_step_time + start_time.total_seconds()
-    elif start_time is None:
-        start_offset = last_step_time
-    else:
-        raise ValueError(start_time)
-
-    recipe['steps'].append(dict(text=step, start_offset=start_offset))
+        recipe['steps'].append(dict(text=step, start_offset=start_offset))
 
 def edit(data, recipe_name, index=None, text=None, before=None, after=None):
-    recipe = get_recipe(data, recipe_name)
-    step = find_step(recipe, index=index)
-    step_index = recipe['steps'].index(step)
+    with with_recipe(data, recipe_name) as recipe:
+        step = find_step(recipe, index=index)
+        step_index = recipe['steps'].index(step)
 
-    if text:
-        step['text'] = text
+        if text:
+            step['text'] = text
 
-    if before:
-        shift = before - step_duration(recipe, index - 1)
-        LOGGER.debug('Shifting before by %r', shift)
-        for step in recipe['steps'][index:]:
-            step['start_offset'] += shift
+        if before:
+            shift = before - step_duration(recipe, index - 1)
+            LOGGER.debug('Shifting before by %r', shift)
+            for step in recipe['steps'][index:]:
+                step['start_offset'] += shift
 
-    if after:
-        shift = after - step_duration(recipe, index)
-        LOGGER.debug('Shifting after by %r', shift)
-        for step in recipe['steps'][index + 1:]:
-            step['start_offset'] += shift
+        if after:
+            shift = after - step_duration(recipe, index)
+            LOGGER.debug('Shifting after by %r', shift)
+            for step in recipe['steps'][index + 1:]:
+                step['start_offset'] += shift
 
 def find_step(recipe, index):
     return recipe['steps'][index]
@@ -515,31 +516,36 @@ def format_seconds(seconds):
         result = '{}h {}'.format(hours, result)
     return result
 
-def show(data, recipe, is_json):
-    recipe = get_recipe(data, recipe)
+def show(data, recipe_name, is_json):
+    with with_recipe(data, recipe_name) as recipe:
+        if is_json:
+            result = dict(steps=[])
+            for step in recipe['steps']:
+                # Add an indirection layer between
+                #   external and internal format
+                result['steps'].append(dict(
+                    text=step['text'],
+                    start_offset=step['start_offset']
+                ))
+            return json.dumps(result)
+        else:
+            result = []
+            for step in recipe['steps']:
+                result.append((format_seconds(step['start_offset']), step['text']))
 
-    if is_json:
-        result = dict(steps=[])
-        for step in recipe['steps']:
-            # Add an indirection layer between
-            #   external and internal format
-            result['steps'].append(dict(
-                text=step['text'],
-                start_offset=step['start_offset']
-            ))
-        return json.dumps(result)
-    else:
-        result = []
-        for step in recipe['steps']:
-            result.append((format_seconds(step['start_offset']), step['text']))
+            time_column_width = max(len(r[0]) for r in result) + 2
+            output = []
+            for time_string, text in result:
+                time_string += ' ' * (time_column_width - len(time_string))
+                output.append('{}{}'.format(time_string, text))
 
-        time_column_width = max(len(r[0]) for r in result) + 2
-        output = []
-        for time_string, text in result:
-            time_string += ' ' * (time_column_width - len(time_string))
-            output.append('{}{}'.format(time_string, text))
+            return '\n'.join(output)
 
-        return '\n'.join(output)
+def recipe_content_id(recipe):
+    "Content addressable id for a recipe... because everythign must be git"
+    recipe = recipe.copy()
+    recipe['content_id'] = None
+    return hashlib.sha256(json.dumps(tuple(sorted(recipe.items())))).hexdigest()
 
 def main():
     args = PARSER.parse_args()
