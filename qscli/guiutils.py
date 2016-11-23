@@ -1,5 +1,8 @@
+import pipes
 import subprocess
+import tempfile
 import time
+
 
 def combo_prompt(prompt, choices):
     p = subprocess.Popen(
@@ -39,3 +42,19 @@ def int_prompt(prompt):
 
 def str_prompt(prompt):
     return _prompt_for_thing(prompt, str)
+
+def run_in_window(command):
+    "Run an interactive terminal command in a new window"
+    with tempfile.NamedTemporaryFile(delete=False) as f:
+        escaped_command = ' '.join(map(pipes.quote, command))
+        escaped_command = 'sh -c "{} > {}; "'.format(escaped_command, f.name)
+        subprocess.check_call(['mate-terminal', '-e', escaped_command])
+        while True:
+            f.seek(0)
+            result = f.read()
+            if result:
+                return result
+            else:
+                time.sleep(0.2)
+
+

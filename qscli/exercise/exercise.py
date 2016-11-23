@@ -18,6 +18,7 @@ from .. import edit
 from .data import SCORER, Data
 from .histogram import Histogram
 from . import points
+from . import heart
 
 LOGGER = logging.getLogger()
 
@@ -48,6 +49,8 @@ def main():
         print gymtime.run(args),
     elif args.action == 'endurance':
         endurance.run(args)
+    elif args.action == 'heart':
+        heart.run(args)
     elif args.action == 'walking':
         walk_args.run(args)
     elif args.action == 'interval':
@@ -109,6 +112,8 @@ def build_parser():
 
     sub.add_parser('random-suggestion')
 
+    heart.add_subparser(sub.add_parser('heart', help='Actions related to measuring heart rate'))
+
     report = sub.add_parser('report')
     mx = report.add_mutually_exclusive_group()
     mx.add_argument('--prompt-for-name', action='store_const', help='Prompt for the name with a gui', dest='name', const=const.PROMPT)
@@ -132,7 +137,6 @@ def build_parser():
     set_score.add_argument('--prompt-for-exercise', dest='exercise', action='store_const', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
     set_score.add_argument('--score', type=float)
     set_score.add_argument('--prompt-for-score', action='store_const', dest='score', const=const.PROMPT, help='Prompt for the exercise with a graphical pop up')
-
 
     sub.add_parser('test')
 
