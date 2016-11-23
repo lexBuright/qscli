@@ -39,6 +39,16 @@ class Data(object):
         return sorted(exercises)
 
     @staticmethod
+    def set_current_endurance_settings(settings):
+        with with_data(DATA_FILE) as data:
+            data['current_endurance_settings'] = settings
+
+    @staticmethod
+    def get_current_endurance_settings():
+        with with_data(DATA_FILE) as data:
+            return data['current_endurance_settings']
+
+    @staticmethod
     def set_endurance_exercise(exercise):
         with with_data(DATA_FILE) as data:
             data['endurance_exercise'] = exercise
@@ -67,11 +77,27 @@ class Data(object):
             weights = data.setdefault('endurance_weights', {})
             return weights.get(exercise, 0)
 
+
     @staticmethod
     def set_endurance_weight(exercise, score):
         with with_data(DATA_FILE) as data:
             weights = data.setdefault('endurance_weights', {})
             weights[exercise] = score
+
+    @staticmethod
+    def get_endurance_settings(exercise):
+        with with_data(DATA_FILE) as data:
+            settings = data.setdefault('endurance_settings', {})
+            return settings.get(exercise)
+
+
+    @staticmethod
+    def set_endurance_settings(exercise, settings):
+        with with_data(DATA_FILE) as data:
+            endurance_settings = data.setdefault('endurance_settings', {})
+            endurance_settings[exercise] = settings
+
+
 
     @staticmethod
     def get_endurance_weights():
