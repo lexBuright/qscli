@@ -7,6 +7,17 @@ def show_history_item(app_data, name):
     playback = app_data['past_playbacks'][name]
     display_full_playback(playback)
 
+def sorted_past_playbacks(app_data):
+    def sort_key((k, v)):
+        return v['start']
+
+    return sorted(app_data['past_playbacks'].items(), key=sort_key)
+
+def show_history(app_data):
+    app_data.setdefault('past_playbacks', dict())
+    for name, playback_data in sorted_past_playbacks(app_data):
+        print name, playback_data['recipe_name'], playback_data['recipe'].get('content_id')[:10]
+
 def display_full_playback(playback):
     print 'Recipe', playback['recipe_name']
     print 'Started', datetime.datetime.fromtimestamp(playback['start'])
@@ -34,7 +45,6 @@ def display_step(step):
         percent_completed = step['duration'] and completed_time / step['duration'] * 100
         print '   ', step['text'], 'ABANDONED', '{:.0f}/{:.0f}({:.0f}%)'.format(
             completed_time, step['duration'], percent_completed)
-
     elif step['finished']:
         print '   ', step['text'], 'FINISHED', step['duration']
     else:

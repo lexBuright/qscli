@@ -49,6 +49,18 @@ def with_recipe(app_data, recipe_name):
     yield recipe
     recipe['content_id'] = recipe_content_id(recipe)
 
+@contextlib.contextmanager
+def read_recipe(app_data, recipe_name):
+    "A read only recipe. (Also look up old recipes by content id"
+    current_recipes = app_data.setdefault('recipes', {})
+    all_recipes = app_data.setdefault('all_recipes', {})
+    recipe = current_recipes.get(recipe_name)
+    if recipe:
+        yield recipe
+    else:
+        recipe_name, = [x for x in all_recipes if x.startswith(recipe_name)]
+        yield all_recipes[recipe_name]
+
 def recipe_content_id(recipe):
     "Content addressable id for a recipe... because everythign must be git"
     recipe = recipe.copy()

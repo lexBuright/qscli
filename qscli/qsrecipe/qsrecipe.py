@@ -76,6 +76,7 @@ stop_parser = parsers.add_parser('stop', help='Stop a current playback')
 stop_parser.add_argument('playback', type=str, help='Playback that you want to stop')
 
 list_parser = parsers.add_parser('list', help='Add an action to a recipe')
+list_parser.add_argument('--anon', '-a', action='store_true', help='Include anonymous recipes (old recipes)')
 
 delete_parser = parsers.add_parser('delete', help='Add an action to a recipe')
 delete_parser.add_argument('recipes', type=str, nargs='*')
@@ -103,6 +104,10 @@ play_parser.add_argument(
     type=float,
     default=1.0,
     help='Play faster or slower')
+play_parser.add_argument(
+    '--dry-run', '-n',
+    action='store_true',
+    help='Play but do not record')
 
 play_note_parser = parsers.add_parser('playnote', help='Record a note on the current playback')
 play_note_parser.add_argument('playback', type=str)
@@ -113,6 +118,11 @@ play_notes_parser.add_argument('playback', type=str)
 
 abandon_parser = parsers.add_parser('abandon', help='Abandon the current activity')
 abandon_parser.add_argument('playback', type=str)
+
+delay_parser = parsers.add_parser('delay', help='Delay the current step for a reason')
+delay_parser.add_argument('playback', type=str)
+delay_parser.add_argument('seconds', type=int, help='Number of seconds in the future before the step should start')
+delay_parser.add_argument('--reason', type=str, help='Reason for the delay', default='Unknown')
 
 skip_parser = parsers.add_parser('skip', help='Skip the current activity in a playback (not started)')
 skip_parser.add_argument('playback', type=str)
@@ -141,7 +151,8 @@ def run(args):
             name=options.name,
             error_keep=options.error_keep,
             poll_period=options.poll_period,
-            multiplier=options.multiplier)
+            multiplier=options.multiplier,
+            dry_run=options.dry_run)
         return player.play()
 
     with data.with_data(data_path) as app_data:
@@ -153,6 +164,8 @@ def run(args):
             return playback.stop(app_data, options.playback)
         elif options.command == 'skip':
             playback.skip_step(app_data, options.playback)
+        elif options.command == 'delay':
+            playback.delay_step(app_data, options.playback, options.seconds, options.reason)
         elif options.command == 'abandon':
             playback.abandon_step(app_data, options.playback)
         elif options.command == 'add':
@@ -165,7 +178,7 @@ def run(args):
                 before=options.before,
                 text=options.text)
         elif options.command == 'list':
-            return list_recipes(app_data)
+            return list_recipes(app_data, options.anon)
         elif options.command == 'delete':
             return delete_recipes(app_data, options.recipes)
         elif options.command == 'show':
@@ -180,15 +193,9 @@ def run(args):
             if options.name:
                 history.show_history_item(app_data, options.name)
             else:
-                show_history(app_data)
+                history.show_history(app_data)
         else:
             raise ValueError(options.command)
-
-def show_history(app_data):
-    app_data.setdefault('past_playbacks', dict())
-    for name, playback_data in app_data['past_playbacks'].items():
-        print name, playback_data['recipe_name'], playback_data['recipe'].get('content_id')
-
 
 def list_playbacks(app_data, options):
     del options
@@ -216,10 +223,14 @@ def delete_recipes(app_data, recipes):
     for recipe in recipes:
         app_data.get('recipes', {}).pop(recipe)
 
-def list_recipes(app_data):
+def list_recipes(app_data, anon):
     result = []
     for name in sorted(app_data.get('recipes', {})):
         result.append(name)
+
+    if anon:
+        result.extend(app_data.get('all_recipes', {}))
+
     return '\n'.join(result)
 
 def add(app_data, recipe_name, step, start_time):
@@ -273,8 +284,7 @@ def format_seconds(seconds):
     return result
 
 def show(app_data, recipe_name, is_json):
-    del app_data
-    with data.with_recipe(app_data, recipe_name) as recipe:
+    with data.read_recipe(app_data, recipe_name) as recipe:
         if is_json:
             result = dict(steps=[])
             for step in recipe['steps']:
@@ -312,7 +322,3 @@ def main():
         result = run(sys.argv[1:])
         if result is not None:
             print result
-
-
-if __name__ == '__main__':
-    main()

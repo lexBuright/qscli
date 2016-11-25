@@ -11,18 +11,21 @@ from . import history
 LOGGER = logging.getLogger('playback')
 
 class Player(object):
-    def __init__(self, data_path, poll_period, recipe_name, error_keep, multiplier, name=None):
+    def __init__(self, data_path, poll_period, recipe_name, error_keep, multiplier, name=None, dry_run=False):
         self._data_path = data_path
         self._name = name or recipe_name
         self._poll_period = poll_period
         self._recipe_name = recipe_name
         self._error_keep = error_keep
         self._multiplier = multiplier
+        self._dry_run = dry_run
+        self._current_delay = None
 
     def play(self):
         # If you change the recipe under me you are
         #    a terrible human being
         recipe = self.start_playing()
+        recipe_finished = False
 
         try:
             step_start = time.time()
@@ -32,18 +35,28 @@ class Player(object):
                 next_step['abandoned_at'] = None
                 next_step['notes'] = []
                 next_step['finished'] = False
+                next_step['delays'] = []
 
-                step_start = step_start + next_step['start_offset'] / self._multiplier
-                try:
-                    LOGGER.debug('Waiting for something to happen...')
-                    self.wait_until(step_start)
-                except (SkippedStep, AbandonedStep) as ex:
-                    LOGGER.debug('Step skipped or abanadoned %r', ex)
-                except AbandonRecipe:
+                while True:
+                    step_start = step_start + next_step['start_offset'] / self._multiplier
+                    try:
+                        LOGGER.debug('Waiting for something to happen or %r...', step_start - time.time())
+                        self.wait_until(step_start)
+                    except (SkippedStep, AbandonedStep) as ex:
+                        LOGGER.debug('Step skipped or abanadoned %r', ex)
+                        break
+                    except DelayedStep as ex:
+                        LOGGER.debug('Step delayed')
+                        start_time = ex.end_time
+                    except AbandonRecipe:
+                        recipe_finished = True
+                        break
+                    break
+
+                if recipe_finished:
                     break
 
                 next_step['started_at'] = time.time()
-
 
                 LOGGER.debug('Setting step %r', next_step['text'])
                 self.next_step(next_step)
@@ -65,7 +78,7 @@ class Player(object):
     @contextlib.contextmanager
     def with_playback_data(self):
         with data.with_data(self._data_path) as app_data:
-            yield app_data['playbacks'].setdefault(self._name, dict(name=self._name))
+            yield app_data['playbacks'][self._name]
 
     @contextlib.contextmanager
     def with_current_step(self):
@@ -94,13 +107,17 @@ class Player(object):
     def start_playing(self):
         with data.with_data(self._data_path) as app_data:
             playbacks = app_data.setdefault('playbacks', {})
+            all_recipes = app_data.setdefault('all_recipes', {})
+
             if self._name in playbacks:
                 raise Exception('There is a already a player called {}. Use a different name'.format(self._name))
 
             with data.with_recipe(app_data, self._recipe_name) as recipe:
+                all_recipes[recipe['content_id']] = recipe
                 playbacks[self._name] = dict(
                     start=time.time(),
                     step=None,
+                    dry_run=self._dry_run,
                     steps=[],
                     recipe=recipe,
                     name=self._name,
@@ -109,8 +126,11 @@ class Player(object):
 
     def wait_until(self, step_start):
         while time.time() < step_start:
-            sleep_period = min(max(step_start - time.time(), 0), self._poll_period)
+            time_left = max(step_start - time.time(), 0)
+            sleep_period = min(time_left, self._poll_period)
+            LOGGER.debug('Waiting %.1f for next poll (time left: %.1f)...', sleep_period, time_left)
             time.sleep(sleep_period)
+            LOGGER.debug('Polling for event...')
             with data.with_data(self._data_path) as app_data:
                 if self._name not in app_data['playbacks']:
                     raise AbandonRecipe()
@@ -120,6 +140,11 @@ class Player(object):
                         raise SkippedStep()
                     elif playback_data['step']['abandoned_at'] is not None:
                         raise AbandonedStep()
+                    elif playback_data['step']['delays']:
+                        delay = playback_data['step']['delays'][-1]
+                        if delay != self._current_delay:
+                            self._current_delay = delay
+                            raise DelayedStep(delay['end_time'])
 
         with self.with_playback_data() as playback_data:
             if playback_data['step'] is not None:
@@ -127,6 +152,11 @@ class Player(object):
 
 class SkippedStep(Exception):
     "Current step was skipped"
+
+class DelayedStep(Exception):
+    "Current step was skipped"
+    def __init__(self, end_time):
+        self.end_time = end_time
 
 class AbandonRecipe(Exception):
     "Current recipe is abandoned"
@@ -149,16 +179,28 @@ def stop(app_data, playback, error=True):
             if save_name not in app_data['past_playbacks']:
                 break
 
-        app_data['past_playbacks'][save_name] = playback_data
-
-
+        if not playback_data['dry_run']:
+            app_data['past_playbacks'][save_name] = playback_data
     app_data['playbacks'].pop(playback)
 
 def playback_status(app_data, playback, verbose):
     if not verbose:
         playing_step = app_data['playbacks'][playback]['step']
-        progress = time.time() - playing_step['started_at']
+
+        if playing_step['delays']:
+            last_delay = playing_step['delays'][-1]
+            delay_until = last_delay['end_time']
+
+
         duration = playing_step['duration']
+
+        relative_delay = delay_until - time.time()
+
+        if time.time() < delay_until:
+            return '{:.0f}s DELAYED FOR {:.0f}s {}'.format(duration, relative_delay, playing_step['text'])
+
+
+        progress = time.time() - playing_step['started_at']
         percent_progress = float(progress) / playing_step['duration'] * 100
         return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
     else:
@@ -171,3 +213,7 @@ def skip_step(app_data, playback):
 def abandon_step(app_data, playback):
     playback_data = app_data['playbacks'][playback]
     playback_data['step']['abandoned_at'] = time.time()
+
+def delay_step(app_data, playback, seconds, reason):
+    playback_data = app_data['playbacks'][playback]
+    playback_data['step']['delays'].append(dict(end_time=time.time() + seconds, reason=reason))
