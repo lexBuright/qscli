@@ -55,6 +55,7 @@ add_parser = parsers.add_parser('add', help='Add an action to a recipe')
 add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 add_parser.add_argument('step', type=str, help='Recipe step')
 add_parser.add_argument('--time', type=parse_time, help='Time delay before this step')
+add_parser.add_argument('--index', type=int, help='Insert at this index. By default insert', default=None)
 
 edit_parser = parsers.add_parser('edit', help='Edit an action in a recipe')
 edit_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
@@ -62,6 +63,7 @@ edit_parser.add_argument('--index', '-i', type=int, help='Operate on the action 
 edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time after this event before next action')
 edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
 edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
+edit_parser.add_argument('--exact', '-x', type=parse_absolute_time, help='Exact time into the recipe for this step')
 
 history_parser = parsers.add_parser('history', help='Show the history of playbacks')
 history_parser.add_argument('name', type=str, nargs='?')
@@ -169,14 +171,15 @@ def run(args):
         elif options.command == 'abandon':
             playback.abandon_step(app_data, options.playback)
         elif options.command == 'add':
-            return add(app_data, options.recipe, options.step, options.time)
+            return add(app_data, options.recipe, options.step, options.time, options.index)
         elif options.command == 'edit':
             return edit(
                 app_data, options.recipe,
                 index=options.index,
                 after=options.after,
                 before=options.before,
-                text=options.text)
+                text=options.text,
+                exact_time=options.exact)
         elif options.command == 'list':
             return list_recipes(app_data, options.anon)
         elif options.command == 'delete':
@@ -233,7 +236,7 @@ def list_recipes(app_data, anon):
 
     return '\n'.join(result)
 
-def add(app_data, recipe_name, step, start_time):
+def add(app_data, recipe_name, step, start_time, index):
     with data.with_recipe(app_data, recipe_name) as recipe:
         if not recipe['steps']:
             last_step_time = 0
@@ -247,26 +250,44 @@ def add(app_data, recipe_name, step, start_time):
         else:
             raise ValueError(start_time)
 
-        recipe['steps'].append(dict(text=step, start_offset=start_offset))
+        step = dict(text=step, start_offset=start_offset)
+        if index is None:
+            recipe['steps'].append(step)
+        else:
+            recipe['steps'].insert(index, step)
 
-def edit(app_data, recipe_name, index=None, text=None, before=None, after=None):
+        recipe['steps'].sort(key=lambda s: s['start_offset'])
+
+def edit(app_data, recipe_name, index=None, text=None, before=None, after=None, exact_time=None):
+    if exact_time:
+        if (before is not None or after is not None) and exact_time is not None:
+           raise Exception('exact_time cannot be used with either before or after')
+
     with data.with_recipe(app_data, recipe_name) as recipe:
         step = find_step(recipe, index=index)
+
+        LOGGER.debug('Editing step %r', step)
 
         if text:
             step['text'] = text
 
-        if before:
+        if exact_time is not None:
+            LOGGER.debug('Moving to precisely %r', exact_time)
+            step['start_offset'] = exact_time
+
+        if before is not None:
             shift = before - data.step_duration(recipe, index - 1)
             LOGGER.debug('Shifting before by %r', shift)
             for step in recipe['steps'][index:]:
                 step['start_offset'] += shift
 
-        if after:
+        if after is not None:
             shift = after - data.step_duration(recipe, index)
             LOGGER.debug('Shifting after by %r', shift)
             for step in recipe['steps'][index + 1:]:
                 step['start_offset'] += shift
+
+        recipe['steps'].sort(key=lambda s: s['start_offset'])
 
 def find_step(recipe, index):
     return recipe['steps'][index]
@@ -297,14 +318,20 @@ def show(app_data, recipe_name, is_json):
             return json.dumps(result)
         else:
             result = []
-            for step in recipe['steps']:
-                result.append((format_seconds(step['start_offset']), step['text']))
+            for step, next_step in zip(recipe['steps'], recipe['steps'][1:] + [None]):
+                if next_step:
+                    duration = format_seconds(next_step['start_offset'] - step['start_offset'])
+                else:
+                    duration = '0s'
+                result.append((format_seconds(step['start_offset']), duration, step['text']))
 
             time_column_width = max(len(r[0]) for r in result) + 2
+            duration_column_width = max(len(r[1]) for r in result) + 2
             output = []
-            for time_string, text in result:
+            for index, (time_string, duration_string, text) in enumerate(result):
                 time_string += ' ' * (time_column_width - len(time_string))
-                output.append('{}{}'.format(time_string, text))
+                duration_string += ' ' * (duration_column_width - len(duration_string))
+                output.append('{} {}{}{}'.format(index, time_string, duration_string, text))
 
             return '\n'.join(output)
 
