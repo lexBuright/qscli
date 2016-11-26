@@ -190,19 +190,19 @@ def playback_status(app_data, playback, verbose):
         if playing_step['delays']:
             last_delay = playing_step['delays'][-1]
             delay_until = last_delay['end_time']
+        else:
+            delay_until = None
 
 
         duration = playing_step['duration']
 
-        relative_delay = delay_until - time.time()
-
-        if time.time() < delay_until:
+        if delay_until and time.time() < delay_until:
+            relative_delay = delay_until - time.time()
             return '{:.0f}s DELAYED FOR {:.0f}s {}'.format(duration, relative_delay, playing_step['text'])
-
-
-        progress = time.time() - playing_step['started_at']
-        percent_progress = float(progress) / playing_step['duration'] * 100
-        return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
+        else:
+            progress = time.time() - (delay_until or playing_step['started_at'])
+            percent_progress = float(progress) / playing_step['duration'] * 100
+            return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
     else:
         history.display_full_playback(app_data['playbacks'][playback])
 
