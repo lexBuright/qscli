@@ -21,6 +21,15 @@ class Player(object):
         self._dry_run = dry_run
         self._current_delay = None
 
+    @staticmethod
+    def _initialize_step(index, next_step):
+        next_step['skipped'] = False
+        next_step['index'] = index
+        next_step['abandoned_at'] = None
+        next_step['notes'] = []
+        next_step['finished'] = False
+        next_step['delays'] = []
+
     def play(self):
         # If you change the recipe under me you are
         #    a terrible human being
@@ -30,12 +39,7 @@ class Player(object):
         try:
             step_start = time.time()
             for index, next_step in enumerate(recipe['steps']):
-                next_step['skipped'] = False
-                next_step['index'] = index
-                next_step['abandoned_at'] = None
-                next_step['notes'] = []
-                next_step['finished'] = False
-                next_step['delays'] = []
+                self._initialize_step(index, next_step)
 
                 while True:
                     step_start = step_start + next_step['start_offset'] / self._multiplier
