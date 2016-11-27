@@ -69,6 +69,7 @@ def target_heart_rate(bpm, tolerance):
             LOGGER.debug('New targetter spawned')
             return
 
+        print 'Getting heart rate'
         rate = get_heart_rate(tolerance=tolerance)
         if rate + tolerance < bpm:
             print '{:.0f} > {:.0f} faster'.format(rate, bpm)
