@@ -41,8 +41,9 @@ class Player(object):
             for index, next_step in enumerate(recipe['steps']):
                 self._initialize_step(index, next_step)
 
+
+                step_start = step_start + next_step['start_offset'] / self._multiplier
                 while True:
-                    step_start = step_start + next_step['start_offset'] / self._multiplier
                     try:
                         LOGGER.debug('Waiting for something to happen or %r...', step_start - time.time())
                         self.wait_until(step_start)
