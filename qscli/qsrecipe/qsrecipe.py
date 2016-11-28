@@ -81,6 +81,10 @@ list_parser.add_argument('--anon', '-a', action='store_true', help='Include anon
 delete_parser = parsers.add_parser('delete', help='Delete a recipes')
 delete_parser.add_argument('recipes', type=str, nargs='*')
 
+delete_step_parser = parsers.add_parser('delete-step', help='Delete a step in a recipe')
+delete_step_parser.add_argument('recipe', type=str)
+delete_step_parser.add_argument('--index', type=int, help='Index of step to delete')
+
 parsers.add_parser('test', help='Run the tests')
 show_parser = parsers.add_parser('show', help='Show a recipe')
 show_parser.add_argument('recipe', type=str)
@@ -182,6 +186,8 @@ def run(args):
             return list_recipes(app_data, options.anon)
         elif options.command == 'delete':
             return delete_recipes(app_data, options.recipes)
+        elif options.command == 'delete-step':
+            return delete_step(app_data, options.recipe, options.index)
         elif options.command == 'show':
             return show(app_data, options.recipe, options.json)
         elif options.command == 'playbacks':
@@ -223,6 +229,19 @@ def show_play_notes(app_data, playback_name):
 def delete_recipes(app_data, recipes):
     for recipe in recipes:
         app_data.get('recipes', {}).pop(recipe)
+
+def delete_step(app_data, recipe_name, index):
+    if index is None:
+        # We might later support different search criteria
+        raise Exception('Must specify and index')
+
+    with data.with_recipe(app_data, recipe_name) as recipe:
+        deleted_step_offset = recipe['steps'][index]['start_offset']
+        recipe['steps'].pop(index)
+        shift = None
+        for step in recipe['steps'][index:]:
+            shift = deleted_step_offset - step['start_offset'] if shift is None else shift
+            step['start_offset'] -= shift
 
 def list_recipes(app_data, anon):
     result = []
