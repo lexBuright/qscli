@@ -144,10 +144,6 @@ def command_update(metric_data, command, refresh, first_id):
             LOGGER.debug('Already a value for %r', ident)
 
 def log_entries(entries, json_output, output_fields):
-
-    if json_output and output_fields:
-        raise Exception('Cannot output specific fields and json')
-
     if json_output:
         return json.dumps([dict(time=entry['time'], value=entry['value'], metric=entry['metric'], id=entry.get('id')) for entry in entries])
     else:
