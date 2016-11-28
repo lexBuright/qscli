@@ -20,6 +20,7 @@ PARSER.add_argument('--show-periods', '-p', action='store_true', help='Show peri
 PARSER.add_argument('--raw', '-r', action='store_true', help='Do not clear lines between prints')
 PARSER.add_argument('--json', '-j', action='store_true', help='Output as machine-readable json')
 PARSER.add_argument('--auto', '-a', action='store_true', help='Stop as soon as a stable reading is reached')
+PARSER.add_argument('--no-tty', '-T', action='store_true', help='Use stdin and standard out for interactivity (rather than tty)')
 
 
 def readchar(stream, wait_for_char=True):
@@ -77,6 +78,7 @@ class TerminalDisplay(object):
 
         if self._raw:
             self._terminal.write('\n')
+            self._terminal.flush()
 
     def clear(self):
         if self._raw:
@@ -104,12 +106,15 @@ class InfoFormatter(object):
         return result
 
 def main():
-    terminal = open('/dev/tty', 'w+')
-
     args = PARSER.parse_args()
+    if args.no_tty:
+        interactive_in = sys.stdin
+        interactive_out = sys.stdout
+    else:
+        interactive_in = interactive_out = open('/dev/tty', 'w+')
 
     timer = ClickTimer()
-    display = TerminalDisplay(terminal, args.raw)
+    display = TerminalDisplay(interactive_out, args.raw)
 
     formatter = InfoFormatter(args.show_periods)
 
@@ -118,7 +123,7 @@ def main():
 
     result = None
     while result is None:
-        if get_character(terminal):
+        if get_character(interactive_in):
             break
         timer.click()
 
