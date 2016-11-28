@@ -56,9 +56,12 @@ class Player(object):
                     except AbandonRecipe:
                         recipe_finished = True
                         break
-                    break
+                    else:
+                        LOGGER.debug('Next step reached %r', next_step)
+                        break
 
                 if recipe_finished:
+                    LOGGER.debug('Recipe finished')
                     break
 
                 next_step['started_at'] = time.time()
