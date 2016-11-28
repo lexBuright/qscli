@@ -72,11 +72,11 @@ def target_heart_rate(bpm, tolerance):
         print 'Getting heart rate'
         rate = get_heart_rate(tolerance=tolerance)
         if rate + tolerance < bpm:
-            print '{:.0f} > {:.0f} faster'.format(rate, bpm)
             period = INITIAL_PERIOD
+            print '{:.0f} > {:.0f} faster. Next check {}'.format(rate, bpm, period)
         elif rate - tolerance > bpm:
-            print '{:.0f} > {:.0f} slower'.format(rate, bpm)
             period = INITIAL_PERIOD
+            print '{:.0f} > {:.0f} slower. Next check {}'.format(rate, bpm, period)
         else:
             period = min(period * MULTIPLIER, HEART_RATE_STABLE_PERIOD)
             print 'Correct rate ({:.0f} =~ {:.0f}). Next check in {:.0f}'.format(rate, bpm, period)
