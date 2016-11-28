@@ -19,6 +19,7 @@ PARSER.add_argument('--tolerance', '-t', default=5.0, type=float)
 PARSER.add_argument('--show-periods', '-p', action='store_true', help='Show period information about every key press')
 PARSER.add_argument('--raw', '-r', action='store_true', help='Do not clear lines between prints')
 PARSER.add_argument('--json', '-j', action='store_true', help='Output as machine-readable json')
+PARSER.add_argument('--auto', '-a', action='store_true', help='Stop as soon as a stable reading is reached')
 
 
 def readchar(stream, wait_for_char=True):
@@ -113,9 +114,10 @@ def main():
     formatter = InfoFormatter(args.show_periods)
 
     display.show('Press any key at a rate. Enter to finish result written to stdout\n')
+    result = None
 
     result = None
-    while True:
+    while result is None:
         if get_character(terminal):
             break
         timer.click()
