@@ -52,7 +52,7 @@ class Player(object):
                         break
                     except DelayedStep as ex:
                         LOGGER.debug('Step delayed')
-                        start_time = ex.end_time
+                        step_start = ex.end_time
                     except AbandonRecipe:
                         recipe_finished = True
                         break
