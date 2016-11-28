@@ -263,7 +263,10 @@ def add(app_data, recipe_name, step, start_time, index):
         if isinstance(start_time, datetime.timedelta):
             start_offset = last_step_time + start_time.total_seconds()
         elif start_time is None:
-            start_offset = last_step_time
+            if index is not None:
+                start_offset = recipe['steps'][index]['start_offset']
+            else:
+                start_offset = last_step_time
         else:
             raise ValueError(start_time)
 
