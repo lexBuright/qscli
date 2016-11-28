@@ -242,6 +242,17 @@ class Data(object):
         with with_data(DATA_FILE) as data:
             data['last_report'] = name
 
+    @staticmethod
+    def set_heart_rate_targetter(guid):
+        with with_data(DATA_FILE) as data:
+            data['heart.targeter'] = guid
+
+
+    @staticmethod
+    def get_heart_rate_targetter():
+        with with_data(DATA_FILE) as data:
+            return data['heart.targeter']
+
 
 def dict_replace(dict_, **kwargs):
     updated = copy.copy(dict_)

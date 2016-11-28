@@ -65,7 +65,7 @@ def target_heart_rate(bpm, tolerance):
     data.Data.set_heart_rate_targetter(ident)
 
     while True:
-        if ident != data.Data.get_heart_rate_targetter(ident):
+        if ident != data.Data.get_heart_rate_targetter():
             LOGGER.debug('New targetter spawned')
             return
 
