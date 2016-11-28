@@ -57,7 +57,7 @@ def watch_run(watch, options):
     elif options.command == 'clocks':
         return watch.clocks(options.quiet, options.running)
     elif options.command == 'start':
-        return watch.start(options.clock, options.next_label)
+        return watch.start(options.clock, options.next_label, interactive=options.interactive)
     elif options.command == 'stop':
         return watch.stop(options.clock)
     elif options.command == 'import-all':
@@ -105,6 +105,7 @@ def build_parser():
     start = parsers.add_parser('start', help='Stop or start the stopwatch')
     start.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
     start.add_argument('--next-label', '-n', type=str, help='Label for the next split')
+    start.add_argument('--interactive', '-i', action='store_true', help='Block and interactive change display')
 
     clocks = parsers.add_parser('clocks', help='Show all the clocks')
     clocks.add_argument('--quiet', action='store_true', help='Only output the clock name')
@@ -119,7 +120,7 @@ def build_parser():
     show = parsers.add_parser('show', help='Show the current elapsed time')
     show.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
     show.add_argument('--json', action='store_true', help='Output in json format')
-    show.add_argument('--interactive', action='store_true', help='Block and interactive change display')
+    show.add_argument('--interactive', '-i', action='store_true', help='Block and interactive change display')
 
     show_split = parsers.add_parser('show-split', help='Show the current elapsed time')
     show_split.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)

@@ -86,11 +86,11 @@ class Watch(object):
                 else:
                     yield '{}{} {:.2f}\n'.format(running_flag, clock_name, clock_duration)
 
-    def start(self, clock_name, next_label=None):
+    def start(self, clock_name, next_label=None, interactive=False):
         with self.with_data() as data:
             with self.with_clock_data(clock_name, data=data) as clock_data:
                 if clock_data.get('running', False):
-                    return ''
+                    pass
 
             with self.with_clock_data(clock_name, clear=True, data=data) as clock_data:
                 start = self.time_mod.time()
@@ -98,7 +98,11 @@ class Watch(object):
                 clock_data['start'] = start
                 clock_data['stop'] = None
                 clock_data['splits'] = backend.new_list([ClockDataParser.new_split(start, name=next_label)])
-                return ''
+
+        if interactive:
+            return self.show(clock_name, is_interactive=True)
+
+        return ''
 
     def label_split(self, clock_name, label):
         with self.with_clock_data(clock_name) as clock_data:
@@ -204,7 +208,7 @@ class Watch(object):
             else:
                 raise NoMoreData()
 
-    def show(self, clock_name, json_output, is_interactive):
+    def show(self, clock_name, json_output=False, is_interactive=False):
         LOGGER.debug('Showing %r', clock_name)
 
         if json_output and is_interactive:
@@ -214,8 +218,9 @@ class Watch(object):
             yield '\n'
             while True:
                 self.time_mod.sleep(0.1)
+                output = self.show_raw(clock_name, json_output).strip()
                 yield '\r'
-                yield self.show_raw(clock_name, json_output).strip()
+                yield output
         else:
             yield self.show_raw(clock_name, json_output)
 
