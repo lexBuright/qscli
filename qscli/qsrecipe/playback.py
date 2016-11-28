@@ -198,6 +198,7 @@ def playback_status(app_data, playback, verbose):
         if playing_step['delays']:
             last_delay = playing_step['delays'][-1]
             delay_until = last_delay['end_time']
+            delay_reason = last_delay['reason']
         else:
             delay_until = None
 
@@ -206,7 +207,7 @@ def playback_status(app_data, playback, verbose):
 
         if delay_until and time.time() < delay_until:
             relative_delay = delay_until - time.time()
-            return '{:.0f}s DELAYED FOR {:.0f}s {}'.format(duration, relative_delay, playing_step['text'])
+            return 'DELAYED FOR {:.0f}s BECAUSE {}: {} {}'.format(relative_delay, delay_reason, duration, playing_step['text'])
         else:
             progress = time.time() - (delay_until or playing_step['started_at'])
             percent_progress = float(progress) / playing_step['duration'] * 100
