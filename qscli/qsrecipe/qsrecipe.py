@@ -90,7 +90,7 @@ show_parser = parsers.add_parser('show', help='Show a recipe')
 show_parser.add_argument('recipe', type=str)
 show_parser.add_argument('--json', action='store_true', help='Output data as machine-readable json')
 
-parsers.add_parser('playbacks', help='List historic playbacks')
+parsers.add_parser('playing', help='List historic playbacks')
 
 play_parser = parsers.add_parser('play', help='Play a recipe with steps in order')
 play_parser.add_argument('recipe', help='Which recipe to replay', default='DEFAULT')
@@ -190,7 +190,7 @@ def run(args):
             return delete_step(app_data, options.recipe, options.index)
         elif options.command == 'show':
             return show(app_data, options.recipe, options.json)
-        elif options.command == 'playbacks':
+        elif options.command == 'playing':
             list_playbacks(app_data, options)
         elif options.command == 'playnote':
             add_play_note(app_data, options.playback, options.note)
