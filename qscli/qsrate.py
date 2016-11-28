@@ -122,7 +122,8 @@ def main():
     result = None
 
     result = None
-    while result is None:
+    while not args.auto or result is None:
+
         if get_character(interactive_in):
             break
         timer.click()
