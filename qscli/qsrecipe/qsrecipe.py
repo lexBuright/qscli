@@ -78,7 +78,7 @@ stop_parser.add_argument('playback', type=str, help='Playback that you want to s
 list_parser = parsers.add_parser('list', help='Add an action to a recipe')
 list_parser.add_argument('--anon', '-a', action='store_true', help='Include anonymous recipes (old recipes)')
 
-delete_parser = parsers.add_parser('delete', help='Add an action to a recipe')
+delete_parser = parsers.add_parser('delete', help='Delete a recipes')
 delete_parser.add_argument('recipes', type=str, nargs='*')
 
 parsers.add_parser('test', help='Run the tests')
