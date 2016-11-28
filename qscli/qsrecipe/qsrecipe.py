@@ -1,5 +1,3 @@
-#!/usr/bin/python
-
 """
 A command line utility to plan sequences of actions over time, e.g. recipes,
 chemical procedures, operations, checklists, training routines, daily routines,
