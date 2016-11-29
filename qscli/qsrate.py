@@ -21,6 +21,7 @@ PARSER.add_argument('--raw', '-r', action='store_true', help='Do not clear lines
 PARSER.add_argument('--json', '-j', action='store_true', help='Output as machine-readable json')
 PARSER.add_argument('--auto', '-a', action='store_true', help='Stop as soon as a stable reading is reached')
 PARSER.add_argument('--no-tty', '-T', action='store_true', help='Use stdin and standard out for interactivity (rather than tty)')
+PARSER.add_argument('--beat-file', '-b', type=str, help='Write the timeseries of beats to a file')
 
 
 def readchar(stream, wait_for_char=True):
@@ -105,6 +106,65 @@ class InfoFormatter(object):
 
         return result
 
+def calculate_bpm(timer, confidence, tolerance):
+    beat_time = time.time()
+    result = non_result = None
+
+    if timer.periods:
+        # This should really be corrected for multicomparison problems...
+        #   This will show up if the data has no really periodicity,
+        #   we are likely to find a sperious periodicity over
+        #   a large period
+        confidences = list(timeseries_confidences(timer.frequencies, confidence))
+        for index, triple in enumerate(confidences):
+
+            (lower, mid, upper) = triple
+            plus_minus = (upper - lower) / 2.0
+
+            if plus_minus < tolerance:
+                result = dict(
+                    estimate=mid,
+                    plus_minus=plus_minus,
+                    status='success',
+                    time=beat_time,
+                    index=index,
+                    triple=triple
+                    )
+                return result, None
+        else:
+            if not confidences:
+                return None, None
+            else:
+                temp = [((upper - lower), i) for i, (lower, _mid, upper) in list(enumerate(confidences))]
+                _, index = min(temp)
+                triple = confidences[index]
+                (lower, mid, upper) = triple
+                plus_minus = (upper - lower) / 2.0
+
+                non_result = dict(
+                    best_guess=triple[1],
+                    plus_minus=plus_minus,
+                    status='did-not-converge',
+                    time=beat_time,
+                    triple=triple
+                )
+
+                return None, non_result
+    raise Exception('Unreachable')
+
+
+def format_result(formatter, periods, result, non_result):
+    index = result.get('index') if result else  non_result.get('index')
+    triple = result.get('triple') if result else non_result.get('triple')
+
+    if result:
+        return 'GOOD {}'.format(formatter.format_triple(index, triple, periods))
+    elif non_result:
+        return 'BAD {}'.format(formatter.format_triple(index, triple, periods))
+    else:
+        return  'BAD '
+
+
 def main():
     args = PARSER.parse_args()
     if args.no_tty:
@@ -112,6 +172,8 @@ def main():
         interactive_out = sys.stdout
     else:
         interactive_in = interactive_out = open('/dev/tty', 'w+')
+
+    beat_stream = args.beat_file and open(args.beat_file, 'w')
 
     timer = ClickTimer()
     display = TerminalDisplay(interactive_out, args.raw)
@@ -123,38 +185,26 @@ def main():
 
     result = None
     while not args.auto or result is None:
-
         if get_character(interactive_in):
             break
         timer.click()
+        if not timer.periods:
+            continue
 
-        if timer.periods:
-            # This should really be corrected for multicomparison problems...
-            #   This will show up if the data has no really periodicity,
-            #   we are likely to find a sperious periodicity over
-            #   a large period
-            confidences = list(timeseries_confidences(timer.frequencies, args.confidence))
-            for index, triple in enumerate(confidences):
-                (lower, mid, upper) = triple
-                plus_minus = (upper - lower) / 2.0
-                if plus_minus < args.tolerance:
-                    result = dict(estimate=mid, plus_minus=plus_minus, status='success')
-                    output = 'GOOD {}'.format(formatter.format_triple(index, triple, timer.periods))
-                    display.show(output)
-                    break
-            else:
-                if not confidences:
-                    output = 'BAD '
-                    display.show(output)
-                else:
-                    temp = [((upper - lower), i) for i, (lower, _mid, upper) in list(enumerate(confidences))]
-                    _, index = min(temp)
-                    triple = confidences[index]
-                    output = 'BAD  {}'.format(formatter.format_triple(index, triple, timer.periods))
-                    display.show(output)
+        result, non_result = calculate_bpm(timer, args.confidence, args.tolerance)
+        output = format_result(formatter, timer.periods, result, non_result)
+        display.show(output)
+
+        if beat_stream:
+            write_beat(beat_stream, result or non_result)
 
     display.clear()
-    show_result(result, args.json)
+    show_result(result or non_result, args.json)
+
+def write_beat(beat_stream, result):
+    beat_stream.write(json.dumps(result))
+    beat_stream.write('\n')
+    beat_stream.flush()
 
 def show_result(result, is_json):
     if is_json:
