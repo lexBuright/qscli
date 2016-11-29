@@ -194,14 +194,13 @@ def stop(app_data, playback, error=True):
 def playback_status(app_data, playback, verbose):
     if not verbose:
         playing_step = app_data['playbacks'][playback]['step']
-
+        LOGGER.debug('Step %r', playing_step)
         if playing_step['delays']:
             last_delay = playing_step['delays'][-1]
             delay_until = last_delay['end_time']
             delay_reason = last_delay['reason']
         else:
             delay_until = None
-
 
         duration = playing_step['duration']
 
