@@ -273,11 +273,49 @@ class Data(object):
         with with_data(DATA_FILE) as data:
             data['heart.targeter'] = guid
 
-
     @staticmethod
     def get_heart_rate_targetter():
         with with_data(DATA_FILE) as data:
             return data['heart.targeter']
+
+    @staticmethod
+    def get_heart_multiplier():
+        with with_data(DATA_FILE) as data:
+            return data.get('heart.multiplier', 1.0)
+
+    @staticmethod
+    def get_heart_poll_period():
+        with with_data(DATA_FILE) as data:
+            return data.get('heart.poll_period')
+    @staticmethod
+    def set_heart_poll_period(period):
+        with with_data(DATA_FILE) as data:
+            data['heart.poll_period'] = period
+
+    @staticmethod
+    def get_heart_target_period():
+        with with_data(DATA_FILE) as data:
+            return data.get('heart.target_period')
+    @staticmethod
+    def set_heart_target_period(period):
+        with with_data(DATA_FILE) as data:
+            data['heart.target_period'] = period
+
+    @staticmethod
+    def set_heart_multiplier(multiplier):
+        with with_data(DATA_FILE) as data:
+            data['heart.multiplier'] = multiplier
+
+    @staticmethod
+    def set_heart_reading_delay(delay):
+        with with_data(DATA_FILE) as data:
+            data['heart.delay'] = delay
+
+    @staticmethod
+    def get_heart_reading_delay(delay):
+        with with_data(DATA_FILE) as data:
+            return data.get('heart.delay')
+
 
 
 def dict_replace(dict_, **kwargs):
