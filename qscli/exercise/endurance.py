@@ -1,13 +1,11 @@
 import json
+import re
 
+from . import const, dict_score, parsers, points
 from .. import guiutils
-
 from .data import SCORER, Data
 from .watch import Watch
-from . import const
-from . import parsers
-from . import points
-from . import dict_score
+
 
 def settings_option(parser):
     parser.add_argument('--setting', '-s', action='append', help='Settings for this exercise, of the form a=b;c=d;e=PROMPT or PROMPT')
@@ -28,11 +26,12 @@ def add_subparser(parser):
     result_parser = sub.add_parser('results', help='Show history results')
     result_parser.add_argument('exercise', type=str)
 
-
     edit_parser = sub.add_parser('edit', help='Edit an endurance exercise')
     edit_parser.add_argument('exercise', type=str, help='Exercise name')
     edit_parser.add_argument('--float-setting', type=parse_csv, help='List of setting names which are floats')
     edit_parser.add_argument('--string-setting', type=parse_csv, help='List of setting names which are strings')
+
+    sub.add_parser('list', help='List endurance exercises')
 
     points = sub.add_parser('points')
     points.add_argument('days_ago', default=0, type=int, nargs='?')
@@ -89,6 +88,8 @@ def run(args):
         show_endurance_comparison(days_ago)
     elif args.endurance_action == 'edit':
         edit_exercise(args.exercise, args.float_setting, args.string_setting)
+    elif args.endurance_action == 'list':
+        list_exercises()
     elif args.endurance_action == 'results':
         show_results(args.exercise)
     else:
@@ -108,6 +109,28 @@ def edit_exercise(exercise, float_settings, string_settings):
     string_setting_dict = dict([(n, 'string') for n in (string_settings or [])])
     settings = dict(float_setting_dict, **string_setting_dict)
     Data.set_endurance_settings(exercise, settings)
+
+def list_exercises():
+    data = json.loads(SCORER.get().run(['list', '--json']))
+    score_names = [item['name'] for item in data]
+    names = set()
+    for score_name in score_names:
+        match = re.match(r'exercise\.endurance\.([^.]*)', score_name)
+        if match is not None:
+            name = match.group(1)
+            names.add(name)
+
+    names = sorted(names)
+
+    exercises = []
+
+    for name in names:
+        settings = Data.get_endurance_settings(name)
+        exercises.append(dict(name=name, settings=settings))
+
+    for ex in exercises:
+        setting_string = ' ' + ','.join(sorted(ex['settings'])) if ex['settings'] else 'no-settings'
+        print '{} {}'.format(ex['name'], setting_string)
 
 def set_weight(exercise, score):
     if exercise == const.PROMPT:
