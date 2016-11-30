@@ -40,6 +40,9 @@ def days_ago_option(parser):
 UNIT_SIZE = {'h': datetime.timedelta(seconds=3600), 'm': datetime.timedelta(seconds=60), 's': datetime.timedelta(seconds=1), 'd': datetime.timedelta(days=1)}
 
 def build_parser():
+    def json_option(parser):
+        parser.add_argument('--json', action='store_true', help='Output as machine readable testing')
+
     PARSER = argparse.ArgumentParser(description=__doc__)
     PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 
@@ -51,7 +54,7 @@ def build_parser():
     parsers.add_parser('daemon', help='Run a daemon')
 
     records_command = parsers.add_parser('records', help='Display when all time bests were obtained')
-    records_command.add_argument('--json', action='store_true', help='Output results in machine readable json', default=False)
+    json_option(records_command)
     days_ago_option(records_command)
     parse_utils.regexp_option(records_command)
 
@@ -81,13 +84,15 @@ def build_parser():
 
     summary_parser = metric_command(parsers, 'summary', help_string='Summarise a result (defaults to the last value)')
     summary_parser.add_argument('--update', action='store_true', help='Assume last value is still changing')
-    summary_parser.add_argument('--json', action='store_true', help='Output as machine readable testing')
+    json_option(summary_parser)
 
     ident_mx = summary_parser.add_mutually_exclusive_group()
     ident_mx.add_argument('--id', type=str, help='Show summary for the result with this id')
     ident_mx.add_argument('--index', type=int, help='Show the nth most recent value', default=0)
 
-    parsers.add_parser('list', help='List the things that we have scores for')
+    list_parser = parsers.add_parser('list', help='List the things that we have scores for')
+    json_option(list_parser)
+
     return PARSER
 
 
@@ -139,7 +144,10 @@ def run(options, stdin):
         # data.update(**new_data)
         if options.command == 'list':
             metric_names = sorted(data.get('metrics', dict()))
-            return '\n'.join(metric_names)
+            if options.json:
+                return json.dumps([dict(name=n) for n in metric_names])
+            else:
+                return '\n'.join(metric_names)
         elif options.command == 'log':
             return store.log_action(data, options, delete=options.delete)
         elif options.command == 'delete':
