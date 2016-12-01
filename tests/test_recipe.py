@@ -1,10 +1,11 @@
 
 import json
+import pprint
 import shutil
 import tempfile
 import unittest
 
-from qscli import qsrecipe
+from qscli.qsrecipe import qsrecipe
 
 
 class TestRecipes(unittest.TestCase):
@@ -47,8 +48,8 @@ class TestRecipes(unittest.TestCase):
         self.run_cli(['edit', 'recipe1', '--index', '1', '--before', '5s', '--after', '15s', '--text', 'Step two'])
 
         recipe = json.loads(self.run_cli(['show', 'recipe1', '--json']))
-        self.assertEquals(recipe['steps'][1]['start_time'], 5)
-        self.assertEquals(recipe['steps'][2]['start_time'], 20)
+        self.assertEquals(recipe['steps'][1]['start_offset'], 5)
+        self.assertEquals(recipe['steps'][2]['start_offset'], 20)
         self.assertEquals(recipe['steps'][1]['text'], 'Step two')
 
     def test_edit_final(self):
@@ -58,7 +59,7 @@ class TestRecipes(unittest.TestCase):
 
         self.run_cli(['edit', 'recipe1', '--index', '2', '--before', '5s'])
         recipe = json.loads(self.run_cli(['show', 'recipe1', '--json']))
-        self.assertEquals(recipe['steps'][-1]['start_time'], 15)
+        self.assertEquals(recipe['steps'][-1]['start_offset'], 15)
 
     def test_show(self):
         self.run_cli(['add', 'omelete', 'break eggs'])
@@ -68,15 +69,20 @@ class TestRecipes(unittest.TestCase):
         self.run_cli(['add', 'omelete', 'Add eggs', '--time', '+2m'])
         self.run_cli(['add', 'omelete', 'Finished', '--time', '+3m'])
 
-        expected = '''\
-0s      break eggs
-10s     Whisk
-15s     Add oil
-20s     Heat pan
-2m 20s  Add eggs
-5m 20s  Finished'''
+        expected = [
+            dict(start_offset=0, text='break eggs'),
+            dict(start_offset=10, text='Whisk'),
+            dict(start_offset=15, text='Add oil'),
+            dict(start_offset=20, text='Heat pan'),
+            dict(start_offset=140, text='Add eggs'),
+            dict(start_offset=320, text='Finished'),
+        ]
 
-        self.assertEquals(expected, self.run_cli(['show', 'omelete']))
+        json_data = json.loads(self.run_cli(['show', 'omelete', '--json']))
+
+        steps = [{k:step[k] for k in ("text", "start_offset")} for step in json_data['steps']]
+
+        self.assertEquals(expected, steps)
 
     # def test_playback(self):
     #     self.run_cli(['add', 'recipe', 'start'])
