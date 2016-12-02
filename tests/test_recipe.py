@@ -1,13 +1,11 @@
 
 import contextlib
 import json
-import pprint
 import shutil
 import tempfile
 import unittest
 
 from qscli.qsrecipe import qsrecipe
-
 
 class TestRecipes(unittest.TestCase):
     def setUp(self):
@@ -61,6 +59,25 @@ class TestRecipes(unittest.TestCase):
         self.run_cli(['edit', 'recipe1', '--index', '2', '--before', '5s'])
         recipe = json.loads(self.run_cli(['show', 'recipe1', '--json']))
         self.assertEquals(recipe['steps'][-1]['start_offset'], 15)
+
+    def test_add_after(self):
+        self.run_cli(['add', 'recipe1', '1'])
+        self.run_cli(['add', 'recipe1', '2', '--time', '+10s'])
+        self.run_cli(['add', 'recipe1', '3', '--time', '+10s'])
+        self.run_cli(['add', 'recipe1', '--index', '1', '--duration', '30s', 'new'])
+        steps = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps']
+        offsets = [s['start_offset'] for s in steps]
+        self.assertEquals(offsets, [0, 10, 40, 50])
+
+    def test_add_offsets(self):
+        self.run_cli(['add', 'recipe1', '1'])
+        self.run_cli(['add', 'recipe1', '2', '--time', '+10s'])
+        self.run_cli(['add', 'recipe1', '3', '--time', '+10s'])
+        self.run_cli(['add', 'recipe1', '--index', '1', 'new', '--time', '+10s'])
+        steps = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps']
+        offsets = [s['start_offset'] for s in steps]
+        self.assertEquals(offsets, [0, 10, 20, 30])
+
 
     def test_move_ordering(self):
         def get_order():

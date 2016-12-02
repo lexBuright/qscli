@@ -313,7 +313,7 @@ def add(app_data, recipe_name, step, start_time, index, duration):
             recipe['steps'].insert(index, step)
 
         if duration:
-            if duration == len(recipe['steps']):
+            if index is None or index == len(recipe['steps']):
                 raise Exception('Cannot set a duration on the last step')
 
             for step in recipe['steps'][index + 1:]:
