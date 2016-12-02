@@ -53,6 +53,9 @@ add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 add_parser.add_argument('step', type=str, help='Recipe step')
 add_parser.add_argument('--time', type=parse_time, help='Time delay before this step')
 add_parser.add_argument('--index', type=int, help='Insert at this index. By default insert', default=None)
+add_parser.add_argument(
+    '--duration', type=parse_absolute_time,
+    help='How long the step should last. (Does not work for final argument)', default=None)
 
 class IntegerCoord(object):
     def __init__(self, type, value):
@@ -200,7 +203,10 @@ def run(args):
         elif options.command == 'abandon':
             playback.abandon_step(app_data, options.playback)
         elif options.command == 'add':
-            return add(app_data, options.recipe, options.step, options.time, options.index)
+            return add(
+                app_data,
+                options.recipe, options.step, options.time,
+                options.index, options.duration)
         elif options.command == 'move':
             return move(app_data, options.recipe, options.old_index, options.new_index)
         elif options.command == 'edit':
@@ -283,7 +289,7 @@ def list_recipes(app_data, anon):
 
     return '\n'.join(result)
 
-def add(app_data, recipe_name, step, start_time, index):
+def add(app_data, recipe_name, step, start_time, index, duration):
     with data.with_recipe(app_data, recipe_name) as recipe:
         if not recipe['steps']:
             last_step_time = 0
@@ -306,8 +312,14 @@ def add(app_data, recipe_name, step, start_time, index):
         else:
             recipe['steps'].insert(index, step)
 
-        sort_steps(recipe)
+        if duration:
+            if duration == len(recipe['steps']):
+                raise Exception('Cannot set a duration on the last step')
 
+            for step in recipe['steps'][index + 1:]:
+                step['start_offset'] += duration
+
+        sort_steps(recipe)
 
 def sort_steps(recipe):
     recipe['steps'].sort(key=lambda s: s['start_offset'])
