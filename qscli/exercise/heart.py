@@ -95,8 +95,14 @@ def show_heart_rate():
 
 def poll_heart_rate(tolerance, period):
     reset() # kill other targets
+    data.Data.set_heart_poll_period(period)
     while True:
-        data.Data.set_heart_poll_period(period)
+
+        if data.Data.get_heart_poll_period() is None:
+            # This is a race condition, we should
+            #  be using guids
+            break
+
         rate = get_heart_rate(tolerance=tolerance)
         print 'Rate {} bpm'.format(rate)
         sleep_time = period * data.Data.get_heart_multiplier()
@@ -130,6 +136,12 @@ def target_heart_rate(bpm, tolerance):
         else:
             period = min(period * MULTIPLIER, HEART_RATE_STABLE_PERIOD)
             print 'Correct rate ({:.0f} =~ {:.0f}). Next check in {:.0f}'.format(rate, bpm, period)
-        LOGGER.debug('Waiting %r until next reading...', period)
+
+        sleep_period = period * data.Data.get_heart_multiplier()
+        LOGGER.debug('Waiting %r until next reading...', sleep_period)
         data.Data.set_heart_target_period(period)
-        time.sleep(period * data.Data.get_heart_multiplier())
+        time.sleep(sleep_period)
+        # delay = data.Data.get_heart_reading_delay()
+        # if delay:
+        #     LOGGER.debug('Delaying until', period)
+        #     time.sleep(delay)
