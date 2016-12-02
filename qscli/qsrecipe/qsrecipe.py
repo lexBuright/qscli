@@ -15,13 +15,12 @@ import datetime
 import json
 import logging
 import os
+import re
 import sys
 import time
 import unittest
 
-from . import playback
-from . import history
-from . import data
+from . import data, history, playback
 
 LOGGER = logging.getLogger()
 
@@ -54,6 +53,34 @@ add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 add_parser.add_argument('step', type=str, help='Recipe step')
 add_parser.add_argument('--time', type=parse_time, help='Time delay before this step')
 add_parser.add_argument('--index', type=int, help='Insert at this index. By default insert', default=None)
+
+class IntegerCoord(object):
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
+
+    def get_index(self, old_index):
+        if self.type == 'absolute':
+            return self.value
+        elif self.type == 'relative':
+            return self.value + old_index
+        else:
+            raise ValueError(self.type)
+
+    @classmethod
+    def parse(cls, string):
+        sign, digits = re.match(r'([+-])?(\d+)', string).groups()
+        index_type = {'+':'relative', '-':'relative', None: 'absolute'}[sign]
+        return cls(index_type, int(digits))
+
+
+
+move_parser = parsers.add_parser('move', help='Move a step while keeping all durations the same')
+move_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
+move_parser.add_argument('old_index', type=int, help='Step to move')
+move_parser.add_argument('new_index',
+    type=IntegerCoord.parse,
+    help='Index to which the step should be moved. Relative motions can be specified like +1 or -1')
 
 edit_parser = parsers.add_parser('edit', help='Edit an action in a recipe')
 edit_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
@@ -174,6 +201,8 @@ def run(args):
             playback.abandon_step(app_data, options.playback)
         elif options.command == 'add':
             return add(app_data, options.recipe, options.step, options.time, options.index)
+        elif options.command == 'move':
+            return move(app_data, options.recipe, options.old_index, options.new_index)
         elif options.command == 'edit':
             return edit(
                 app_data, options.recipe,
@@ -203,6 +232,7 @@ def run(args):
                 history.show_history(app_data)
         else:
             raise ValueError(options.command)
+
 
 def list_playbacks(app_data, options):
     del options
@@ -240,7 +270,7 @@ def delete_step(app_data, recipe_name, index):
         recipe['steps'].pop(index)
         shift = None
         for step in recipe['steps'][index:]:
-            shift = deleted_step_offset - step['start_offset'] if shift is None else shift
+            shift = shift if shift is not None else deleted_step_offset - step['start_offset']
             step['start_offset'] -= shift
 
 def list_recipes(app_data, anon):
@@ -276,7 +306,42 @@ def add(app_data, recipe_name, step, start_time, index):
         else:
             recipe['steps'].insert(index, step)
 
-        recipe['steps'].sort(key=lambda s: s['start_offset'])
+        sort_steps(recipe)
+
+
+def sort_steps(recipe):
+    recipe['steps'].sort(key=lambda s: s['start_offset'])
+
+
+def diff(l):
+    return [b - a for a, b in zip(l, l[1:])]
+
+def move(app_data, recipe_name, old_index, new_index):
+    literal_new_index = new_index.get_index(old_index)
+
+    with data.with_recipe(app_data, recipe_name) as recipe:
+
+        # There are two spaces: duration space
+        #  and absolute offset space. This task is
+        #  best suited for duration space
+
+        durations = diff([s['start_offset'] for s in recipe['steps']])
+        steps_and_durations = list(zip(durations + [0], recipe['steps']))
+        moved = steps_and_durations.pop(old_index)
+
+        steps_and_durations.insert(literal_new_index, moved)
+
+        offset = 0
+        new_steps = []
+        for duration, step in steps_and_durations:
+            step['start_offset'] = offset
+            offset += duration
+            new_steps.append(step)
+
+        recipe['steps'] = new_steps
+
+
+
 
 def edit(app_data, recipe_name, index=None, text=None, before=None, after=None, exact_time=None):
     if exact_time:
@@ -307,7 +372,7 @@ def edit(app_data, recipe_name, index=None, text=None, before=None, after=None, 
             for step in recipe['steps'][index + 1:]:
                 step['start_offset'] += shift
 
-        recipe['steps'].sort(key=lambda s: s['start_offset'])
+        sort_steps(recipe)
 
 def find_step(recipe, index):
     return recipe['steps'][index]

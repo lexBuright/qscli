@@ -6,7 +6,6 @@ import threading
 
 import fasteners
 
-
 def step_duration(recipe, index):
     "Calculate how long a step lasts in a recipe"
     next_step_time = step_time(recipe, index + 1)

@@ -22,53 +22,51 @@ class Player(object):
         self._current_delay = None
 
     @staticmethod
-    def _initialize_step(index, next_step):
+    def _initialize_step(index, next_step, recipe):
         next_step['skipped'] = False
         next_step['index'] = index
         next_step['abandoned_at'] = None
         next_step['notes'] = []
         next_step['finished'] = False
         next_step['delays'] = []
+        next_step['duration'] = data.step_duration(recipe, next_step['index'])
+
+    def _play_step(self, step_duration):
+        step_start = time.time() + step_duration / self._multiplier
+        while True:
+            try:
+                LOGGER.debug('Waiting for something to happen or %r...', step_start - time.time())
+                self.wait_until(step_start)
+            except DelayedStep as ex:
+                LOGGER.debug('Step delayed')
+                step_start = ex.end_time + step_duration
+            except AbandonRecipe:
+                return True
+            except (SkippedStep, AbandonedStep) as ex:
+                LOGGER.debug('Step skipped or abanadoned %r', ex)
+                return False
+            else:
+                LOGGER.debug('Next step reached')
+                return False
 
     def play(self):
         # If you change the recipe under me you are
         #    a terrible human being
         recipe = self.start_playing()
-        recipe_finished = False
 
         try:
-            step_start = time.time()
+            step_duration = 0
             for index, next_step in enumerate(recipe['steps']):
-                self._initialize_step(index, next_step)
+                self._initialize_step(index, next_step, recipe)
 
-
-                step_start = step_start + next_step['start_offset'] / self._multiplier
-                while True:
-                    try:
-                        LOGGER.debug('Waiting for something to happen or %r...', step_start - time.time())
-                        self.wait_until(step_start)
-                    except (SkippedStep, AbandonedStep) as ex:
-                        LOGGER.debug('Step skipped or abanadoned %r', ex)
-                        break
-                    except DelayedStep as ex:
-                        LOGGER.debug('Step delayed')
-                        step_start = ex.end_time
-                    except AbandonRecipe:
-                        recipe_finished = True
-                        break
-                    else:
-                        LOGGER.debug('Next step reached %r', next_step)
-                        break
-
-                if recipe_finished:
+                if self._play_step(step_duration):
                     LOGGER.debug('Recipe finished')
                     break
 
                 next_step['started_at'] = time.time()
-
-                LOGGER.debug('Setting step %r', next_step['text'])
                 self.next_step(next_step)
                 print next_step['text']
+                step_duration = next_step['duration']
                 del next_step
 
             with data.with_data(self._data_path) as app_data:
@@ -104,12 +102,12 @@ class Player(object):
             playback_data['step'] = stored_step
 
     def next_step(self, next_step):
+        LOGGER.debug('Setting step %r', next_step['text'])
         with self.with_playback_data() as playback_data:
             old_step = playback_data.get('step', None)
             if old_step:
                 playback_data.setdefault('steps', [])
                 playback_data['steps'].append(old_step)
-            next_step['duration'] = data.step_duration(playback_data['recipe'], next_step['index'])
             playback_data['step'] = next_step
 
     def start_playing(self):

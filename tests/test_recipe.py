@@ -1,4 +1,5 @@
 
+import contextlib
 import json
 import pprint
 import shutil
@@ -60,6 +61,66 @@ class TestRecipes(unittest.TestCase):
         self.run_cli(['edit', 'recipe1', '--index', '2', '--before', '5s'])
         recipe = json.loads(self.run_cli(['show', 'recipe1', '--json']))
         self.assertEquals(recipe['steps'][-1]['start_offset'], 15)
+
+    def test_move_ordering(self):
+        def get_order():
+            return [int(step['text'])
+                        for step in json.loads(self.run_cli(['show', 'list', '--json']))['steps']]
+
+        @contextlib.contextmanager
+        def with_test_list():
+            self.run_cli(['add', 'list', '0'])
+            self.run_cli(['add', 'list', '1', '--time', '+10s'])
+            self.run_cli(['add', 'list', '2', '--time', '+10s'])
+            self.run_cli(['add', 'list', '3', '--time', '+10s'])
+            self.run_cli(['add', 'list', '4', '--time', '+10s'])
+            self.run_cli(['add', 'list', '5', '--time', '+10s'])
+            yield
+            self.run_cli(['delete', 'list'])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '3', '3'])
+            self.assertEquals(get_order(), [0, 1, 2, 3, 4, 5])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '3', '2'])
+            self.assertEquals(get_order(), [0, 1, 3, 2, 4, 5])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '3', '0'])
+            self.assertEquals(get_order(), [3, 0, 1, 2, 4, 5])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '3', '5'])
+            self.assertEquals(get_order(), [0, 1, 2, 4, 5, 3])
+
+
+    def test_move_offset(self):
+        def get_offsets():
+            return [int(step['start_offset'])
+                        for step in json.loads(self.run_cli(['show', 'list', '--json']))['steps']]
+
+        def get_durations():
+            return [b - a for a, b in zip(get_offsets(), get_offsets()[1:])]
+
+        @contextlib.contextmanager
+        def with_test_list():
+            self.run_cli(['add', 'list', '0']) # 1s
+            self.run_cli(['add', 'list', '1', '--time', '+1s']) #2s
+            self.run_cli(['add', 'list', '2', '--time', '+2s']) #3s
+            self.run_cli(['add', 'list', '3', '--time', '+3s']) #4s
+            self.run_cli(['add', 'list', '4', '--time', '+4s']) # 5s
+            self.run_cli(['add', 'list', '5', '--time', '+5s']) # 0s
+            yield
+            self.run_cli(['delete', 'list'])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '0', '1'])
+            self.assertEquals(get_durations(), [2, 1, 3, 4, 5])
+
+        with with_test_list():
+            self.run_cli(['move', 'list', '2', '4'])
+            self.assertEquals(get_durations(), [1, 2, 4, 5, 3])
 
     def test_show(self):
         self.run_cli(['add', 'omelete', 'break eggs'])
