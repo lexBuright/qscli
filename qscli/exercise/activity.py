@@ -36,7 +36,6 @@ def stop(name):
     ident = activity['ident']
     activities.pop(name)
     data.Data.set_activities(activities)
-    print ['qstimeseries', 'append', 'exercise.activity.stop.event', '--string', activity, '--id', ident + ':stop']
     subprocess.check_call(['qstimeseries', 'append', 'exercise.activity.stop.event', '--string', json.dumps(activity), '--id', ident + ':stop'])
 
 def stop_all():

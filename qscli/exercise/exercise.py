@@ -84,9 +84,9 @@ def show_activities():
     result = []
     for d in data:
         info = json.loads(d['value'])
-        result.append(info['id'] + ' ' + info['name'])
+        result.append(info['ident'] + ' ' + info['name'])
     return '\n'.join(result)
-                         )
+
 def edit_notes(editor):
     with tempfile.NamedTemporaryFile(delete=False) as stream:
         old_notes = Data.get_current_notes() or ''
