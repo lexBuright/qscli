@@ -85,6 +85,7 @@ def get_heart_rate(tolerance):
     LOGGER.debug('Getting heart rate with tolerance %r', tolerance)
     result = json.loads(guiutils.run_in_window(['qsrate', '--auto', '--json', '--tolerance', str(tolerance)]))
     subprocess.check_call(['qstimeseries', 'append', 'exercise.heart-rate', str(result['estimate'])])
+    subprocess.check_call(['qstimeseries', 'append', 'exercise.heart-rate.event', '--string', json.dumps(result)])
     return result['estimate']
 
 def show_heart_rate():
