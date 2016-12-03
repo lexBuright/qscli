@@ -19,6 +19,7 @@ from .data import SCORER, Data
 from .histogram import Histogram
 from . import points
 from . import heart
+from .. import os_utils
 
 LOGGER = logging.getLogger()
 
@@ -67,11 +68,25 @@ def main():
         show_report(args.name, args.forget)
     elif args.action == 'last-report':
         print Data.get_last_report()
+    elif args.action == 'activities':
+        print show_activities()
     elif args.action == 'edit-notes':
         edit_notes(args.editor)
     else:
         raise ValueError(args.action)
 
+def show_activities():
+    data = json.loads(os_utils.backticks([
+        'qstimeseries', 'show',
+        '--series', 'exercise.activity.start.event',
+        '--json']))
+
+    result = []
+    for d in data:
+        info = json.loads(d['value'])
+        result.append(info['id'] + ' ' + info['name'])
+    return '\n'.join(result)
+                         )
 def edit_notes(editor):
     with tempfile.NamedTemporaryFile(delete=False) as stream:
         old_notes = Data.get_current_notes() or ''
@@ -125,6 +140,8 @@ def build_parser():
     report.add_argument('--forget', action='store_true', help="Do not remember showing report for history")
 
     sub.add_parser('last-report')
+
+    activities = sub.add_parser('activities', help='List activities that you have done')
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
