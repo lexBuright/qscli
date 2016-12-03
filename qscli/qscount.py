@@ -253,7 +253,7 @@ class Counter(object):
             events = [event for event in events if set_id is None or event.get('set', None) == set_id]
 
             if not is_json:
-                string_result = '\n'.join(datetime.datetime.fromtimestamp(event['time']).isoformat() for event in events)
+                string_result = '\n'.join(datetime.datetime.fromtimestamp(event['time']).isoformat() + ' ' + str(event['set']) for event in events)
                 return string_result
             else:
                 return json.dumps(dict(events=events))
