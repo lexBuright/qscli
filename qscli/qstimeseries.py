@@ -173,10 +173,6 @@ def build_parser():
     show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
     show_command.add_argument('--delete', help='Delete the matches entries', action='store_true')
 
-    delete_parser = parsers.add_parser('delete', help='Delete a value from a timeseries')
-    delete_parser.add_argument('series', type=str, help='Which series to delete from')
-    mx = delete_parser.add_mutually_exclusive_group(required=True)
-    mx.add_argument('--id', type=parse_ident, help='Delete entry with this id', dest='ident', action='append')
     return parser
 
 PERIODS = {
@@ -246,8 +242,6 @@ def run(args):
             funcs=map(get_agg_func, options.func or ['min']),
             missing_value=options.missing_value,
             include_missing=options.missing)
-    elif options.command == 'delete':
-        return delete(db, options.series, options.ident)
     elif options.command == 'series':
         return show_series(db, prefix=options.prefix)
     else:
