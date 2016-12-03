@@ -317,8 +317,7 @@ def parse_ident(ident_string):
         return IdentUnion(None, None)
 
 def delete(db, series, ids=None, indexes=None):
-    if not ids and not indexes:
-        raise ValueError()
+    assert ids is None or indexes is None
 
     if ids is not None :
         query = sqlexp.Query(action='DELETE')
@@ -335,13 +334,14 @@ def delete(db, series, ids=None, indexes=None):
         cursor = db.cursor()
         cursor.execute(query.query(), query.values())
         db.commit()
-    else:
+    elif indexes is not None:
         for index in indexes:
             if index < 0:
                 backwards = index < 0
                 index = -index -1
             else:
                 index = index
+                backwards = False
 
             cursor = db.cursor()
 
@@ -349,8 +349,6 @@ def delete(db, series, ids=None, indexes=None):
 
             query = sqlexp.Query(action='DELETE')
             query.where_equals('series', series)
-            if ident:
-                query.where_equals('given_ident', ident)
 
             query.order('id', reverse=backwards)
             query.offset(index)
@@ -358,6 +356,14 @@ def delete(db, series, ids=None, indexes=None):
 
             cursor.execute(query.query(), query.values())
             db.commit()
+    else:
+        query = sqlexp.Query(action='DELETE')
+        query.where_equals('series', series)
+
+        cursor = db.cursor()
+        cursor.execute(query.query(), query.values())
+        db.commit()
+
 
 def show_series(db, prefix=None):
     cursor = db.cursor()
