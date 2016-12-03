@@ -21,7 +21,7 @@ def start(name, info): # Only one activity with a name can be done at a time
 
     activities[name] = activity
     data.Data.set_activities(activities)
-    subprocess.check_call(['qstimeseries', 'append', 'exercise.activity.start.event', '--string', json.dumps(activity)])
+    subprocess.check_call(['qstimeseries', 'append', 'exercise.activity.start.event', '--string', json.dumps(activity), '--id', ident + ':start'])
 
 def stop(name):
     activities = data.Data.get_activities()
@@ -31,10 +31,13 @@ def stop(name):
         #   in a pointless broken state is worse
         return
 
+
     activity = activities[name]
+    ident = activity['ident']
     activities.pop(name)
     data.Data.set_activities(activities)
-    subprocess.check_call(['qstimeseries', 'append', 'exercise.activity.stop.event', '--string', activity])
+    print ['qstimeseries', 'append', 'exercise.activity.stop.event', '--string', activity, '--id', ident + ':stop']
+    subprocess.check_call(['qstimeseries', 'append', 'exercise.activity.stop.event', '--string', json.dumps(activity), '--id', ident + ':stop'])
 
 def stop_all():
     activities = data.Data.get_activities()

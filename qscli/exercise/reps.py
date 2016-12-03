@@ -122,7 +122,7 @@ def summary():
 
     exercise_score = 'exercise.score.reps.' + exercise_name.split('.', 1)[1]
     events = json.loads(COUNTER.get().run(['log', '--set', 'CURRENT', '--json', exercise_name]))
-    if events:
+    if events['events']:
         start = events['events'][0]['time']
         end = events['events'][-1]['time']
         duration = end - start
