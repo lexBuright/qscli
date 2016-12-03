@@ -316,6 +316,15 @@ class Data(object):
         with with_data(DATA_FILE) as data:
             return data.get('heart.delay')
 
+    @staticmethod
+    def get_activities():
+        with with_data(DATA_FILE) as data:
+            return data.get('activities', {})
+
+    @staticmethod
+    def set_activities(activities):
+        with with_data(DATA_FILE) as data:
+            data['activities'] = activities
 
 
 def dict_replace(dict_, **kwargs):

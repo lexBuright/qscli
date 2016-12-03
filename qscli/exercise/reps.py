@@ -8,6 +8,7 @@ from . import const
 from .data import COUNTER, SCORER, Data
 from . import parsers
 from . import points
+from . import activity
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='rep_action')
@@ -32,6 +33,8 @@ def add_subparser(parser):
     note_parser = sub.add_parser('note')
     note_parser.add_argument('note', type=str, help='Record a note about the reps that you are doing')
 
+    sub.add_parser('stop')
+
 def get_records():
     data = json.loads(SCORER.get().run(['records', '--json', '--days-ago', '0', '--regex', '^exercise.score.reps.']))
     return data['records']
@@ -48,17 +51,23 @@ def get_record_history(length):
             records_by_days_ago[days_ago] += 1
     return records_by_days_ago
 
-
+def start(exercise_name):
+    score_name = 'exercise.{}'.format(exercise_name)
+    exercise_score = 'exercise.score.reps.{}'.format(exercise_name)
+    Data.set_rep_exercise(score_name)
+    COUNTER.get().run(['new-set', score_name])
+    SCORER.get().run(['store', exercise_score, '0'])
+    try:
+        activity.start('reps', dict(name=exercise_name))
+    except activity.AlreadyStarted:
+        print 'reps already started. Finish it.'
+        raise
+    else:
+        print 'Starting {}'.format(exercise_name)
 
 def run(args):
     if args.rep_action == 'start':
-        exercise_name = 'exercise.{}'.format(args.exercise_name)
-        exercise_score = 'exercise.score.reps.{}'.format(args.exercise_name)
-
-        Data.set_rep_exercise(exercise_name)
-
-        COUNTER.get().run(['new-set', exercise_name])
-        SCORER.get().run(['store', exercise_score, '0'])
+        start(args.exercise_name)
     elif args.rep_action == 'note':
         COUNTER.get().run(['note', args.note])
     elif args.rep_action == 'rep':
@@ -78,32 +87,41 @@ def run(args):
 
         if args.clear:
             ignore_list = []
-        ignore_list = sorted(set(ignore_list + ['exercise.' + activity for activity in activities]))
+        ignore_list = sorted(set(ignore_list + ['exercise.' + a for a in activities]))
         Data.set_to_ignore(ignore_list)
 
         print '\n'.join(ignore_list)
+    elif args.rep_action == 'stop':
+        print 'Finished'
+        print summary()
+        activity.stop('reps')
+    else:
+        raise ValueError(args.rep_action)
 
 def record_rep():
     exercise_name = Data.get_rep_exercise()
-    exercise_score = 'exercise.score.reps.' + exercise_name.split('.', 1)[1]
-    versus_days = Data.get_versus_days_ago()
-
-    points = calculate_points(0)
-    versus_points = calculate_points(versus_days)
-    store_points(datetime.date.today(), points.total)
-
     import sparklines # This takes 2-3 milliseconds, so delay this (from __future__ import round)
     # graph = sparklines.sparklines([
     #     calculate_points(data, i).total
     #     for i in range(0, 7, 1)])[0]
     # print graph
 
-    print 'Points: {} (vs {})'.format(points.total, versus_points.total)
-
-    print 'Count:', exercise_name
     COUNTER.get().run(['incr', exercise_name])
-    events = json.loads(COUNTER.get().run(['log', '--set', 'CURRENT', '--json', exercise_name]))
+    summary()
 
+def summary():
+    exercise_name = Data.get_rep_exercise()
+    versus_days = Data.get_versus_days_ago()
+    versus_points = calculate_points(versus_days)
+
+    points = calculate_points(0)
+    print 'Points: {} (vs {})'.format(points.total, versus_points.total)
+    print 'Count:', exercise_name
+
+    store_points(datetime.date.today(), points.total)
+
+    exercise_score = 'exercise.score.reps.' + exercise_name.split('.', 1)[1]
+    events = json.loads(COUNTER.get().run(['log', '--set', 'CURRENT', '--json', exercise_name]))
     if events:
         start = events['events'][0]['time']
         end = events['events'][-1]['time']
@@ -195,7 +213,6 @@ def set_score(exercise, days_ago, score):
 
 def store_points(day, points):
     SCORER.get().run(['update', '--id', day.isoformat(), 'exercise.score.daily.rep-points', str(points)])
-
 
 def rep_matrix():
     result = []
