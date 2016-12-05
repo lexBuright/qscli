@@ -51,6 +51,22 @@ class TestRecipes(unittest.TestCase):
         self.assertEquals(recipe['steps'][2]['start_offset'], 20)
         self.assertEquals(recipe['steps'][1]['text'], 'Step two')
 
+    def test_edit_command(self):
+        # A really rubbish test to check code path
+        self.run_cli(['add', 'recipe1', 'Step1'])
+        self.run_cli(['edit', 'recipe1', '--index', '0', '--add-command', '/bin/echo hello\ world'])
+        step = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps'][0]
+        self.assertEquals(step['commands'], [['/bin/echo', 'hello world']])
+
+        self.run_cli(['edit', 'recipe1', '--index', '0', '--add-command', '/bin/echo hello\ moon'])
+        self.run_cli(['edit', 'recipe1', '--index', '0', '--delete-command', '0'])
+        step = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps'][0]
+        self.assertEquals(step['commands'], [['/bin/echo', 'hello moon']])
+
+        self.run_cli(['edit', 'recipe1', '--index', '0', '--clear-commands'])
+        step = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps'][0]
+        self.assertEquals(step['commands'], [])
+
     def test_edit_final(self):
         self.run_cli(['add', 'recipe1', 'Step1'])
         self.run_cli(['add', 'recipe1', 'Step2', '--time', '+10s'])

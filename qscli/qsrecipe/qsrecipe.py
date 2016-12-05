@@ -21,6 +21,7 @@ import time
 import unittest
 
 from . import data, history, playback
+from ..symbol import Symbol
 
 LOGGER = logging.getLogger()
 
@@ -30,6 +31,8 @@ UNIT_PERIODS = {
     'h': datetime.timedelta(seconds=3600),
     'd': datetime.timedelta(days=1),
 }
+
+SPLIT = Symbol('Split')
 
 def parse_time(time_string):
     if time_string.startswith('+'):
@@ -47,6 +50,43 @@ PARSER = argparse.ArgumentParser(description='Plan a sequence of activities')
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 PARSER.add_argument('--config-dir', type=str, default=DEFAULT_CONFIG_DIR)
 parsers = PARSER.add_subparsers(dest='command')
+
+def backslash_unescape(str, mappings):
+    "Unescape backslashes mapping some characters to values unless they are escaped"
+    escaped = False
+    for c in str:
+        if c == '\\':
+            escaped = True
+        else:
+            if escaped:
+                yield c
+            else:
+                if c in mappings:
+                    yield mappings[c]
+                else:
+                    yield c
+            escaped = False
+
+def list_split(split_item, lst):
+    part = []
+    for item in lst:
+        if item == split_item:
+            yield part
+            part = []
+        else:
+            part.append(item)
+    if part:
+        yield part
+
+def parse_command(command_string):
+    parts = backslash_unescape(command_string, {' ': SPLIT})
+    return [''.join(w) for w in list_split(SPLIT, parts)]
+
+def step_options(parser):
+    commands = parser.add_mutually_exclusive_group()
+    commands.add_argument('--add-command', action='append', type=parse_command, help='Add a command to run when the step starts')
+    commands.add_argument('--clear-commands', action='store_true', help='Clear all commands')
+    commands.add_argument('--delete-command', metavar='INDEX', type=int, help='Delete a command at an index')
 
 add_parser = parsers.add_parser('add', help='Add an action to a recipe')
 add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
@@ -76,8 +116,6 @@ class IntegerCoord(object):
         index_type = {'+':'relative', '-':'relative', None: 'absolute'}[sign]
         return cls(index_type, int(digits))
 
-
-
 move_parser = parsers.add_parser('move', help='Move a step while keeping all durations the same')
 move_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 move_parser.add_argument('old_index', type=int, help='Step to move')
@@ -92,6 +130,7 @@ edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time a
 edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
 edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
 edit_parser.add_argument('--exact', '-x', type=parse_absolute_time, help='Exact time into the recipe for this step')
+step_options(edit_parser)
 
 history_parser = parsers.add_parser('history', help='Show the history of playbacks')
 history_parser.add_argument('name', type=str, nargs='?')
@@ -216,7 +255,11 @@ def run(args):
                 after=options.after,
                 before=options.before,
                 text=options.text,
-                exact_time=options.exact)
+                exact_time=options.exact,
+                add_command=options.add_command,
+                delete_command_index=options.delete_command,
+                clear_commands=options.clear_commands,
+                )
         elif options.command == 'list':
             return list_recipes(app_data, options.anon)
         elif options.command == 'delete':
@@ -352,16 +395,18 @@ def move(app_data, recipe_name, old_index, new_index):
 
         recipe['steps'] = new_steps
 
-
-
-
-def edit(app_data, recipe_name, index=None, text=None, before=None, after=None, exact_time=None):
+def edit(
+        app_data, recipe_name,
+        index=None, text=None, before=None, after=None,
+        exact_time=None, add_command=None, delete_command_index=None, clear_commands=None
+        ):
     if exact_time:
         if (before is not None or after is not None) and exact_time is not None:
            raise Exception('exact_time cannot be used with either before or after')
 
     with data.with_recipe(app_data, recipe_name) as recipe:
         step = find_step(recipe, index=index)
+        update_step(step)
 
         LOGGER.debug('Editing step %r', step)
 
@@ -384,7 +429,21 @@ def edit(app_data, recipe_name, index=None, text=None, before=None, after=None, 
             for step in recipe['steps'][index + 1:]:
                 step['start_offset'] += shift
 
+        if add_command:
+            for command in add_command:
+                step['commands'].append(command)
+
+        if delete_command_index is not None:
+            step['commands'].pop(delete_command_index)
+
+        if clear_commands:
+            step['commands'] = []
+
         sort_steps(recipe)
+
+def update_step(step):
+    "Bring step uptodate"
+    step.setdefault('commands', [])
 
 def find_step(recipe, index):
     return recipe['steps'][index]
@@ -403,12 +462,14 @@ def format_seconds(seconds):
 
 def show(app_data, recipe_name, is_json):
     with data.read_recipe(app_data, recipe_name) as recipe:
+        map(update_step, recipe['steps'])
         if is_json:
             result = dict(steps=[])
             for step in recipe['steps']:
                 # Add an indirection layer between
                 #   external and internal format
                 result['steps'].append(dict(
+                    commands=step['commands'],
                     text=step['text'],
                     start_offset=step['start_offset']
                 ))
