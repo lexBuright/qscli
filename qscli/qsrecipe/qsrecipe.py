@@ -82,12 +82,6 @@ def parse_command(command_string):
     parts = backslash_unescape(command_string, {' ': SPLIT})
     return [''.join(w) for w in list_split(SPLIT, parts)]
 
-def step_options(parser):
-    commands = parser.add_mutually_exclusive_group()
-    commands.add_argument('--add-command', action='append', type=parse_command, help='Add a command to run when the step starts')
-    commands.add_argument('--clear-commands', action='store_true', help='Clear all commands')
-    commands.add_argument('--delete-command', metavar='INDEX', type=int, help='Delete a command at an index')
-
 add_parser = parsers.add_parser('add', help='Add an action to a recipe')
 add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
 add_parser.add_argument('step', type=str, help='Recipe step')
@@ -96,6 +90,7 @@ add_parser.add_argument('--index', type=int, help='Insert at this index. By defa
 add_parser.add_argument(
     '--duration', type=parse_absolute_time,
     help='How long the step should last. (Does not work for final argument)', default=None)
+add_parser.add_argument('--command', action='append', type=parse_command, help='Add a command to run when the step starts', dest='step_command')
 
 class IntegerCoord(object):
     def __init__(self, type, value):
@@ -130,7 +125,10 @@ edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time a
 edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
 edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
 edit_parser.add_argument('--exact', '-x', type=parse_absolute_time, help='Exact time into the recipe for this step')
-step_options(edit_parser)
+edit_commands = edit_parser.add_mutually_exclusive_group()
+edit_commands.add_argument('--add-command', action='append', type=parse_command, help='Add a command to run when the step starts')
+edit_commands.add_argument('--clear-commands', action='store_true', help='Clear all commands')
+edit_commands.add_argument('--delete-command', metavar='INDEX', type=int, help='Delete a command at an index')
 
 history_parser = parsers.add_parser('history', help='Show the history of playbacks')
 history_parser.add_argument('name', type=str, nargs='?')
@@ -245,7 +243,7 @@ def run(args):
             return add(
                 app_data,
                 options.recipe, options.step, options.time,
-                options.index, options.duration)
+                options.index, options.duration, options.step_command)
         elif options.command == 'move':
             return move(app_data, options.recipe, options.old_index, options.new_index)
         elif options.command == 'edit':
@@ -332,7 +330,7 @@ def list_recipes(app_data, anon):
 
     return '\n'.join(result)
 
-def add(app_data, recipe_name, step, start_time, index, duration):
+def add(app_data, recipe_name, step, start_time, index, duration, step_commands):
     with data.with_recipe(app_data, recipe_name) as recipe:
         if not recipe['steps']:
             last_step_time = 0
@@ -361,6 +359,8 @@ def add(app_data, recipe_name, step, start_time, index, duration):
 
             for step in recipe['steps'][index + 1:]:
                 step['start_offset'] += duration
+
+        step['commands'] = step_commands or []
 
         sort_steps(recipe)
 

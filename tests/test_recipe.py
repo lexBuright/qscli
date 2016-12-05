@@ -67,6 +67,11 @@ class TestRecipes(unittest.TestCase):
         step = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps'][0]
         self.assertEquals(step['commands'], [])
 
+    def test_add_command(self):
+        self.run_cli(['add', 'recipe1', 'Step1', '--command', '/bin/echo hello\ world'])
+        step = json.loads(self.run_cli(['show', 'recipe1', '--json']))['steps'][0]
+        self.assertEquals(step['commands'], [['/bin/echo', 'hello world']])
+
     def test_edit_final(self):
         self.run_cli(['add', 'recipe1', 'Step1'])
         self.run_cli(['add', 'recipe1', 'Step2', '--time', '+10s'])
