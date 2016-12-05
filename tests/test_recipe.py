@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import unittest
 
-from qscli.qsrecipe import qsrecipe
+from qscli.qsrecipe import main
 
 class TestRecipes(unittest.TestCase):
     def setUp(self):
@@ -16,7 +16,7 @@ class TestRecipes(unittest.TestCase):
 
     def run_cli(self, args):
         new_args = ('--config-dir', self.direc) + tuple(args)
-        return qsrecipe.run(new_args)
+        return main.run(new_args)
 
     def test_list(self):
         self.run_cli(['add', 'breakfast', 'eat'])

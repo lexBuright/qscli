@@ -1,2 +1,2 @@
-from . import qsrecipe
-qsrecipe.main()
+from . import main
+main.main()
