@@ -481,15 +481,16 @@ def show(app_data, recipe_name, is_json):
                     duration = format_seconds(next_step['start_offset'] - step['start_offset'])
                 else:
                     duration = '0s'
-                result.append((format_seconds(step['start_offset']), duration, step['text']))
+                result.append((format_seconds(step['start_offset']), duration, step['text'], step['commands']))
 
             time_column_width = max(len(r[0]) for r in result) + 2
             duration_column_width = max(len(r[1]) for r in result) + 2
             output = []
-            for index, (time_string, duration_string, text) in enumerate(result):
+            for index, (time_string, duration_string, text, commands) in enumerate(result):
                 time_string += ' ' * (time_column_width - len(time_string))
                 duration_string += ' ' * (duration_column_width - len(duration_string))
-                output.append('{} {}{}{}'.format(index, time_string, duration_string, text))
+                command_string = '; '.join(' '.join(command) for command in commands)
+                output.append('{} {}{}{} {}'.format(index, time_string, duration_string, text, command_string))
 
             return '\n'.join(output)
 
