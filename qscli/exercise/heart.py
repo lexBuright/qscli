@@ -146,3 +146,9 @@ def target_heart_rate(bpm, tolerance):
         # if delay:
         #     LOGGER.debug('Delaying until', period)
         #     time.sleep(delay)
+
+
+def get_info(start_time, stop_time):
+    subprocess.check_call([
+        'qstimeseries', 'show', 'exercise.heart-rate',
+        '--after', str(start_time), '--before', str(stop_time)])

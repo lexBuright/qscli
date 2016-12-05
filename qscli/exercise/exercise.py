@@ -20,6 +20,7 @@ from .histogram import Histogram
 from . import points
 from . import heart
 from .. import os_utils
+from . import activity
 
 LOGGER = logging.getLogger()
 
@@ -70,10 +71,23 @@ def main():
         print Data.get_last_report()
     elif args.action == 'activities':
         print show_activities()
+    elif args.action == 'info':
+        print show_activity_info(args.uuid)
     elif args.action == 'edit-notes':
         edit_notes(args.editor)
     else:
         raise ValueError(args.action)
+
+def show_activity_info(uuid):
+    info = activity.get_info(uuid)
+    result = []
+    result.append(info['start'])
+    result.append(info['name'])
+    result.append(info['info'])
+    result.append(info['stop'])
+    heart_info = heart.get_info(info['start'], info['stop'])
+    return '\n'.join(map(str, result))
+
 
 def show_activities():
     data = json.loads(os_utils.backticks([
@@ -142,6 +156,9 @@ def build_parser():
     sub.add_parser('last-report')
 
     activities = sub.add_parser('activities', help='List activities that you have done')
+
+    info = sub.add_parser('info', help='Show all the information about a particular actvity')
+    info.add_argument('uuid', type=str, help='Id of the activity')
 
     set_versus = sub.add_parser('versus-days')
     set_versus.add_argument('days_ago', type=int, help='Compare activity to this many days ago')
