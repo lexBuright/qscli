@@ -48,7 +48,7 @@ class TestCli(unittest.TestCase):
         self.cli(['delete', 'first-metric'])
 
         second_list = self.cli(['list'])
-        self.assertFalse('first-metric' not in second_list)
+        self.assertTrue('first-metric' not in second_list, second_list)
         self.assertTrue('other-metric' in second_list)
 
     def test_move(self):

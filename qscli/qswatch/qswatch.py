@@ -89,15 +89,12 @@ class Watch(object):
     def start(self, clock_name, next_label=None, interactive=False):
         with self.with_data() as data:
             with self.with_clock_data(clock_name, data=data) as clock_data:
-                if clock_data.get('running', False):
-                    pass
-
-            with self.with_clock_data(clock_name, clear=True, data=data) as clock_data:
-                start = self.time_mod.time()
-                clock_data['running'] = True
-                clock_data['start'] = start
-                clock_data['stop'] = None
-                clock_data['splits'] = backend.new_list([ClockDataParser.new_split(start, name=next_label)])
+                if not clock_data.get('running', False):
+                    start = self.time_mod.time()
+                    clock_data['running'] = True
+                    clock_data['start'] = start
+                    clock_data['stop'] = None
+                    clock_data['splits'] = backend.new_list([ClockDataParser.new_split(start, name=next_label)])
 
         if interactive:
             return self.show(clock_name, is_interactive=True)

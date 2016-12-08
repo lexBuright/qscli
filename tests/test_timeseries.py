@@ -47,7 +47,7 @@ class TimeseriesTest(unittest.TestCase):
         self.run_cli('append', 'metric', '1')
         self.run_cli('append', 'metric', '2')
 
-        self.run_cli('delete', 'metric', '--id', 'internal--1')
+        self.run_cli('show', '--series', 'metric', '--id', 'internal--1', '--delete')
         value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
         self.assertEquals(value['value'], 2)
 
@@ -56,7 +56,7 @@ class TimeseriesTest(unittest.TestCase):
         self.run_cli('append', 'metric', '2')
         self.run_cli('append', 'metric', '3')
 
-        self.run_cli('delete', 'metric', '--id', 'internal--1', '--id', 'internal--3')
+        self.run_cli('show', '--series', 'metric', '--id', 'internal--1', '--id', 'internal--3', '--delete')
         value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
         self.assertEquals(value['value'], 2)
 
@@ -76,7 +76,7 @@ class TimeseriesTest(unittest.TestCase):
         self.run_cli('append', 'metric', '1')
         self.run_cli('append', 'metric', '2', '--id', 'uniq')
 
-        self.run_cli('delete', 'metric', '--id', 'uniq')
+        self.run_cli('show', '--series', 'metric', '--id', 'uniq', '--delete')
         value, = json.loads(self.run_cli('show', '--series', 'metric', '--json'))
         self.assertEquals(value['value'], 1)
 
