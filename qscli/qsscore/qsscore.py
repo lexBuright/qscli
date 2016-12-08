@@ -134,7 +134,7 @@ def run(options, stdin):
     data_file = os.path.join(options.config_dir, 'data.jsdb')
 
     #ts_store = native_store.NativeTimeSeriesStore(options.config_dir)
-    ts_store = timeseries_store.TimeSeriesStore(options.config_dir)
+    ts_store = timeseries_store.TimeSeriesStore(options.config_dir, options.debug)
     scorer = Scorer(ts_store)
     stats = statistics.Statistics(ts_store)
     data_store = store.Store(ts_store)

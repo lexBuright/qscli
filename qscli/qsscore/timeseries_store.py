@@ -11,9 +11,10 @@ from .. import ipc
 LOGGER = logging.getLogger('timeseries_store')
 
 class TimeSeriesStore(GenericTimeseriesStore):
-    def __init__(self, config_dir):
+    def __init__(self, config_dir, debug):
         self._config_dir = config_dir
         self._client = None
+        self._debug = debug
 
     @staticmethod
     def initialize(metric_data):
@@ -59,7 +60,8 @@ class TimeSeriesStore(GenericTimeseriesStore):
 
     def timeseries(self, *args):
         if self._client is None:
-            self._client = ipc.CliClient(['qstimeseries', '--config-dir', self._config_dir])
+            debug_flags = ['--debug'] if self._debug else []
+            self._client = ipc.CliClient(['qstimeseries'] + debug_flags + ['--config-dir', self._config_dir, 'daemon'])
             self._client.initialize()
         self._client.run(map(str, args))
 
