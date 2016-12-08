@@ -87,7 +87,7 @@ class Player(object):
                 self._run_command(command, self._command_info(step))
 
     def _run_command(self, command, info):
-        command = [c.format(info) for c in command]
+        command = [c.format(**info) for c in command]
         print os_utils.backticks(command).strip().strip('\n')
 
     def _command_info(self, step):

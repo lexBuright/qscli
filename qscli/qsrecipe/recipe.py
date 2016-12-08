@@ -18,8 +18,6 @@ UNIT_PERIODS = {
     'd': datetime.timedelta(days=1),
 }
 
-
-
 def list_recipes(app_data, anon):
     result = []
     for name in sorted(app_data.get('recipes', {})):
