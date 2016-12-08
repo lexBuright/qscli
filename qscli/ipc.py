@@ -16,25 +16,45 @@ import subprocess
 
 LOGGER = logging.getLogger('ipc')
 
-def run_server(parser, run_function):
+def run_server(parser, run_function, debug=True):
     """Start a server, and handle requests. `parser` is an `argparse` parse, `run_function` is a function
     that takes the options returned by this parser and returns a string - often json.
     """
+
+    if debug:
+        print >>sys.stderr, 'Running'
+
     while True:
         command_string = sys.stdin.readline()
         if command_string == '':
             break
 
-        print >>sys.stderr, 'Read command {!r}'.format(command_string)
+        if debug:
+            print >>sys.stderr, 'Read command {!r}'.format(command_string)
+
         command = _tokenize_command(command_string.strip('\n'))
         try:
             options = parser.parse_args(command)
+
+            if debug:
+                print >>sys.stderr, 'Running command'
+
             result_list = run_function(options)
+
+            if debug:
+                print >>sys.stderr, 'Finished running'
+
             result = ''.join(result_list) if result_list is not None else ''
         except BaseException:
             print json.dumps(dict(return_code=1, output='', error=traceback.format_exc()))
         else:
+            if debug:
+                print >>sys.stderr, 'Dumping'
+
             print json.dumps(dict(return_code=0, output=result))
+            sys.stdout.flush()
+            if debug:
+                print >>sys.stderr, 'Finished dumping'
 
 def _tokenize_command(command_string):
     escaping = False
@@ -65,11 +85,14 @@ class CliClient(object):
         self._proc = None
 
     def initialize(self):
-        self._proc = subprocess.Popen(self._command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+        LOGGER.debug('Spawning process %r', self._command)
+        self._proc = subprocess.Popen(self._command, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
 
     def run(self, command):
         command_string = ' '.join(map(_escape_whitespaced, command))
         LOGGER.debug('Sending command %r %r', self, command_string)
+        if self._proc.poll() is not None:
+            raise Exception('Process has died %r', self._command)
         self._proc.stdin.write(command_string + '\n')
         self._proc.stdin.flush()
         reply = self._proc.stdout.readline()
