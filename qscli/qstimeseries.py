@@ -29,6 +29,9 @@ DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qstimeseries')
 IdentUnion = collections.namedtuple('IdentUnion', 'native_id given_id')
 
 def ensure_database(config_dir):
+    if not os.path.isdir(config_dir):
+        os.mkdir(config_dir)
+
     data_file = os.path.join(config_dir, 'data.sqlite')
     if not os.path.exists(data_file):
         try:
@@ -225,20 +228,19 @@ def main():
 def run(args):
     options = build_parser().parse_args(args)
     if options.command == 'daemon':
-        return ipc.run_server(build_parser(), run_options)
+        db = ensure_database(options.config_dir)
+        return ipc.run_server(build_parser(), lambda x: run_options(x, db, options.debug), options.debug)
     else:
-        return run_options(options)
+        return run_options(options, None, options.debug)
 
-def run_options(options):
-    config_dir = options.config_dir or DEFAULT_CONFIG_DIR
-
-    if options.debug:
+def run_options(options, db, debug):
+    if debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if not os.path.isdir(config_dir):
-        os.mkdir(config_dir)
+    if db is None:
+        db = ensure_database(options.config_dir)
 
-    db = ensure_database(config_dir)
+
     if options.command == 'append':
         return append(db, options.series, options.value, options.value_type, options.ident, options.time, options.update)
     elif options.command == 'show':
@@ -246,7 +248,7 @@ def run_options(options):
         if options.delete:
             return delete(db, options.series, options.ident, indexes=options.index)
         else:
-            return  show(db, options.series, options.ident, options.json, indexes=options.index)
+            return show(db, options.series, options.ident, options.json, indexes=options.index)
 
     elif options.command == 'aggregate':
         return aggregate(
