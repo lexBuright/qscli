@@ -22,13 +22,16 @@ qswatch split timername
 If qswatch isn't quite super enough for you, you might want to look into timetrap.
 """
 
-from . import jsdb_backend as backend
-# from . import json_backend as backend
-
+import calendar
 import contextlib
 import json
 import logging
 import os
+
+import iso8601
+import iso8601utils.parsers
+
+from . import jsdb_backend as backend
 
 LOGGER = logging.getLogger(__name__)
 
@@ -86,11 +89,11 @@ class Watch(object):
                 else:
                     yield '{}{} {:.2f}\n'.format(running_flag, clock_name, clock_duration)
 
-    def start(self, clock_name, next_label=None, interactive=False):
+    def start(self, clock_name, next_label=None, interactive=False, start=None):
         with self.with_data() as data:
             with self.with_clock_data(clock_name, data=data) as clock_data:
                 if not clock_data.get('running', False):
-                    start = self.time_mod.time()
+                    start = datetime_to_timestamp(iso8601.parse_date(start)) if start else self.time_mod.time()
                     clock_data['running'] = True
                     clock_data['start'] = start
                     clock_data['stop'] = None
@@ -242,9 +245,9 @@ class Watch(object):
                 yield self.show_split_raw(data, clock_name)
 
     def show_split_raw(self, data, clock_name):
-            name = data['splits'][-1]['name']
-            start = data['splits'][-1]['start']
-            return '{} {:.2f}\n'.format(name, self.time_mod.time() - start)
+        name = data['splits'][-1]['name']
+        start = data['splits'][-1]['start']
+        return '{} {:.2f}\n'.format(name, self.time_mod.time() - start)
 
     def show_raw(self, clock_name, json_output):
         with self.with_clock_data(clock_name) as clock_data:
@@ -420,3 +423,6 @@ class DelayFormat(object):
 
 class NoMoreData(Exception):
     "We have run out of data"
+
+def datetime_to_timestamp(dt):
+    return calendar.timegm(dt.timetuple()) + dt.microsecond * 1e-6
