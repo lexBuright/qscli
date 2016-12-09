@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -8,8 +9,8 @@ import threading
 import time
 import unittest
 
+from qscli.qswatch import json_backend, zodb_backend
 from qscli.qswatch.parse import run
-from qscli.qswatch import zodb_backend, json_backend
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,6 +65,13 @@ class SuperTest(unittest.TestCase):
         self.assertEquals(self.run_watch('show'), '2.00\n')
         self.assertEquals(self.run_watch(), '2.00\n')
         self.assertEquals(self.run_watch('show'), '2.00\n')
+
+    def test_fake_start(self):
+        start_string = datetime.datetime(1970, 1, 1).isoformat()
+        self.run_watch('start', '--start', start_string)
+        self.set_time(60)
+        data = json.loads(self.run_watch('show', '--json'))
+        self.assertEquals(int(data['duration']), 60)
 
     def test_split(self):
         self.assertEquals(self.run_watch(), '')

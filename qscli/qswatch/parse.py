@@ -57,7 +57,7 @@ def watch_run(watch, options):
     elif options.command == 'clocks':
         return watch.clocks(options.quiet, options.running)
     elif options.command == 'start':
-        return watch.start(options.clock, options.next_label, interactive=options.interactive)
+        return watch.start(options.clock, options.next_label, interactive=options.interactive, start=options.start)
     elif options.command == 'stop':
         return watch.stop(options.clock)
     elif options.command == 'import-all':
@@ -106,6 +106,7 @@ def build_parser():
     start.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
     start.add_argument('--next-label', '-n', type=str, help='Label for the next split')
     start.add_argument('--interactive', '-i', action='store_true', help='Block and interactive change display')
+    start.add_argument('--start', type=str, help='Set the clock start time (utc timestamp)', metavar='ISODATE')
 
     clocks = parsers.add_parser('clocks', help='Show all the clocks')
     clocks.add_argument('--quiet', action='store_true', help='Only output the clock name')
