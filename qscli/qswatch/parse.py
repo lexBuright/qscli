@@ -45,7 +45,7 @@ def watch_run(watch, options):
             return watch.start(options.clock)
 
     elif options.command == 'clocks':
-        return watch.clocks(options.quiet, options.running)
+        return watch.clocks(options.quiet, options.running, options.json)
     elif options.command == 'start':
         return watch.start(options.clock, options.next_label, interactive=options.interactive, start=options.start)
     elif options.command == 'stop':
@@ -107,6 +107,7 @@ def build_parser():
 
     clocks = parsers.add_parser('clocks', help='Show all the clocks')
     clocks.add_argument('--quiet', action='store_true', help='Only output the clock name')
+    clocks.add_argument('--json', action='store_true', help='Output in json format')
 
     clocks_runningness = clocks.add_mutually_exclusive_group()
     clocks_runningness.add_argument('--running', action='store_true', help='Only output currently running clocks', dest='running')

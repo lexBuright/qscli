@@ -22,13 +22,10 @@ qswatch split timername
 If qswatch isn't quite super enough for you, you might want to look into timetrap.
 """
 
-import calendar
 import contextlib
 import json
 import logging
 import os
-
-import iso8601
 
 from . import jsdb_backend as backend
 
@@ -70,8 +67,10 @@ class Watch(object):
             else:
                 return False
 
-    def clocks(self, quiet, is_running):
+    def clocks(self, quiet, is_running, is_json):
         with self.with_data() as data:
+            json_results = []
+            results = []
             for clock_name in sorted(data['clocks'].keys()):
                 LOGGER.debug('Considering clock %r', clock_name)
 
@@ -83,10 +82,20 @@ class Watch(object):
 
                 running_flag = '*' if clock_data['running'] else ''
                 clock_duration = (clock_data['stop'] or self.time_mod.time()) - clock_data['start']
+                json_results.append(dict(
+                    name=clock_name,
+                    clock_duration=clock_duration,
+                    running=clock_data['running'],
+                    start=clock_data['start']))
                 if quiet:
-                    yield '{}\n'.format(clock_name)
+                    results.append('{}'.format(clock_name))
                 else:
-                    yield '{}{} {:.2f}\n'.format(running_flag, clock_name, clock_duration)
+                    results.append('{}{} {:.2f}'.format(running_flag, clock_name, clock_duration))
+
+            if is_json:
+                return json.dumps(dict(clocks=json_results))
+            else:
+                return '\n'.join(results)
 
     def start(self, clock_name, next_label=None, interactive=False, start=None):
         with self.with_data() as data:

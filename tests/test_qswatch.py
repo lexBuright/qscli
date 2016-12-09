@@ -85,6 +85,17 @@ class SuperTest(unittest.TestCase):
         data = json.loads(self.run_watch('show', 'clock', '--json'))
         self.assertEquals(int(data['duration']), 86400)
 
+    def test_clocks(self):
+        self.run_watch('start', 'one')
+        self.run_watch('stop', 'one')
+        self.run_watch('start', 'two')
+        self.run_watch('stop', 'two')
+        data = json.loads(self.run_watch('clocks', '--json'))
+        clocks = set([c['name'] for c in data['clocks']])
+        self.assertEquals(clocks, set(['one', 'two']))
+
+        self.run_watch('clocks')
+
     def test_split(self):
         self.assertEquals(self.run_watch(), '')
         self.incr_time(1)
