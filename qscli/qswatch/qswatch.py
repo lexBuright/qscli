@@ -29,7 +29,6 @@ import logging
 import os
 
 import iso8601
-import iso8601utils.parsers
 
 from . import jsdb_backend as backend
 
@@ -93,7 +92,7 @@ class Watch(object):
         with self.with_data() as data:
             with self.with_clock_data(clock_name, data=data) as clock_data:
                 if not clock_data.get('running', False):
-                    start = datetime_to_timestamp(iso8601.parse_date(start)) if start else self.time_mod.time()
+                    start = start if start else self.time_mod.time()
                     clock_data['running'] = True
                     clock_data['start'] = start
                     clock_data['stop'] = None
@@ -103,6 +102,21 @@ class Watch(object):
             return self.show(clock_name, is_interactive=True)
 
         return ''
+
+    def edit(self, clock_name, start=None, stop=None):
+        with self.with_clock_data(clock_name) as clock_data:
+            if len(clock_data['splits']) > 1:
+               raise Exception('Cannot edit a clock with splits')
+
+            if start:
+                clock_data['start'] = start
+
+            if stop:
+                clock_data['stop'] = stop
+
+            clock_data['duration'] = clock_data['stop'] - clock_data['start']
+        return ''
+
 
     def label_split(self, clock_name, label):
         with self.with_clock_data(clock_name) as clock_data:
@@ -423,6 +437,3 @@ class DelayFormat(object):
 
 class NoMoreData(Exception):
     "We have run out of data"
-
-def datetime_to_timestamp(dt):
-    return calendar.timegm(dt.timetuple()) + dt.microsecond * 1e-6

@@ -1,23 +1,26 @@
 
 import argparse
+import calendar
 import json
 import logging
 import sys
 import time
-import traceback
-import unittest
+
+import iso8601
 
 from qscli import ipc
 
 from . import config, qswatch
 from .config import DEFAULT_CLOCK
+
 # needed for unittest
 
 LOGGER = logging.getLogger()
 
 def run(data_dir, time_mod, stdout, args):
+    parser = build_parser()
     args = args or ['toggle']
-    options = PARSER.parse_args(args)
+    options = parser.parse_args(args)
 
     if options.debug:
         logging.basicConfig(level=logging.DEBUG)
@@ -47,6 +50,8 @@ def watch_run(watch, options):
         return watch.start(options.clock, options.next_label, interactive=options.interactive, start=options.start)
     elif options.command == 'stop':
         return watch.stop(options.clock)
+    elif options.command == 'edit':
+        return watch.edit(options.clock, options.start, options.stop)
     elif options.command == 'import-all':
         return watch.import_all(options.filename)
     elif options.command == 'export-all':
@@ -89,11 +94,16 @@ def build_parser():
     toggle = parsers.add_parser('toggle', help='Stop or start the stopwatch')
     toggle.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
 
+    edit = parsers.add_parser('edit', help='Edit an existing timing')
+    edit.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
+    edit.add_argument('--start', type=parse_isodate, help='Set the time the clock started (utc)', metavar='ISODATE')
+    edit.add_argument('--stop', type=parse_isodate, help='Set the time start time (utc)', metavar='ISODATE')
+
     start = parsers.add_parser('start', help='Stop or start the stopwatch')
     start.add_argument('clock', type=str, nargs='?', default=DEFAULT_CLOCK)
     start.add_argument('--next-label', '-n', type=str, help='Label for the next split')
     start.add_argument('--interactive', '-i', action='store_true', help='Block and interactive change display')
-    start.add_argument('--start', type=str, help='Set the clock start time (utc timestamp)', metavar='ISODATE')
+    start.add_argument('--start', type=parse_isodate, help='Set the clock start time (utc timestamp)', metavar='ISODATE')
 
     clocks = parsers.add_parser('clocks', help='Show all the clocks')
     clocks.add_argument('--quiet', action='store_true', help='Only output the clock name')
@@ -151,4 +161,9 @@ def build_parser():
 
     return parser
 
-PARSER = build_parser()
+
+def datetime_to_timestamp(dt):
+    return calendar.timegm(dt.timetuple()) + dt.microsecond * 1e-6
+
+def parse_isodate(string):
+    return datetime_to_timestamp(iso8601.parse_date(string))

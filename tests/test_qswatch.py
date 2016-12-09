@@ -73,6 +73,18 @@ class SuperTest(unittest.TestCase):
         data = json.loads(self.run_watch('show', '--json'))
         self.assertEquals(int(data['duration']), 60)
 
+    def test_revisionism(self):
+        start_string = datetime.datetime(1970, 1, 1).isoformat()
+        stop_string = datetime.datetime(1970, 1, 2).isoformat()
+        self.run_watch('start', 'clock')
+        self.set_time(60)
+        self.run_watch('stop', 'clock')
+        data = json.loads(self.run_watch('show', 'clock', '--json'))
+        self.assertEquals(int(data['duration']), 60)
+        self.run_watch('edit', 'clock', '--start', start_string, '--stop', stop_string)
+        data = json.loads(self.run_watch('show', 'clock', '--json'))
+        self.assertEquals(int(data['duration']), 86400)
+
     def test_split(self):
         self.assertEquals(self.run_watch(), '')
         self.incr_time(1)
