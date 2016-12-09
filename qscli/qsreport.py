@@ -153,10 +153,10 @@ class Data(object):
 
     def _init_config(self):
         if not os.path.isdir(self._config_dir):
-            os.mkdir(self._config_dir)
+            os.makedirs(self._config_dir)
 
         if not os.path.isdir(self._report_dir):
-            os.mkdir(self._report_dir)
+            os.makedirs(self._report_dir)
 
     def get_last(self):
         self._init_config()
@@ -169,9 +169,11 @@ class Data(object):
             data['last'] = last
 
     def get_reports(self):
+        self._init_config()
         return [x for x in os.listdir(self._report_dir) if not x.endswith('~')]
 
     def get_report_path(self, name):
+        self._init_config()
         return os.path.join(self._report_dir, name)
 
 if __name__ == '__main__':
