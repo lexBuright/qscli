@@ -12,7 +12,6 @@ from qscli import ipc
 from . import config, qswatch
 from .config import DEFAULT_CLOCK
 # needed for unittest
-from .test import SuperTest  # pylint: disable=unused-import
 
 LOGGER = logging.getLogger()
 
@@ -31,21 +30,9 @@ def run(data_dir, time_mod, stdout, args):
         for part in watch_run(watch, options):
             stdout.write(part)
 
-def get_tests():
-    return unittest.makeSuite(SuperTest, 'test')
-
 def main():
-    args = sys.argv[:]
-    if '--test' in args:
-        args.remove('--test')
-        if '--debug' in args:
-            logging.basicConfig(level=logging.DEBUG)
-            args.remove('--debug')
-        sys.argv = args
-        unittest.main(module='qswatch.parse', defaultTest='get_tests')
-    else:
-        run(config.DATA_DIR, time, sys.stdout, sys.argv[1:])
-        LOGGER.debug('Exiting')
+    run(config.DATA_DIR, time, sys.stdout, sys.argv[1:])
+    LOGGER.debug('Exiting')
 
 def watch_run(watch, options):
     if options.command == 'toggle':
