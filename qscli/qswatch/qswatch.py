@@ -84,7 +84,7 @@ class Watch(object):
                 clock_duration = (clock_data['stop'] or self.time_mod.time()) - clock_data['start']
                 json_results.append(dict(
                     name=clock_name,
-                    clock_duration=clock_duration,
+                    duration=clock_duration,
                     running=clock_data['running'],
                     start=clock_data['start']))
                 if quiet:
