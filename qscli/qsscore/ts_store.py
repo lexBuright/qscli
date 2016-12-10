@@ -1,16 +1,26 @@
-# Interfaces to timeseries data (in preference to multiple backenda
+# Interfaces to timeseries data
 
 import collections
 import itertools
+import logging
 import time
+import uuid
 
-DataPoint = collections.namedtuple('DataPoint', 'time value id')
+LOGGER = logging.getLogger('ts_store')
+
+
+DataPoint = collections.namedtuple('DataPoint', 'time value id index')
 
 def init(metric_data):
     metric_data.setdefault('values', [])
 
 def get_timeseries(metric_data):
-    return [DataPoint(time=value['time'], value=value['value'], id=i) for i, value in enumerate(metric_data['values'])]
+    # Hack fill in uiids to ensure a uniq id
+    for v in metric_data['values']:
+        if v.get('id') is None:
+            v['id'] = str(uuid.uuid1())
+
+    return [DataPoint(time=value['time'], value=value['value'], id=value.get('id', 'bad'), index=i) for i, value in enumerate(metric_data['values'])]
 
 def _get_values(metric_data):
     return metric_data['values']
@@ -19,8 +29,15 @@ def get_raw_values(metric_data):
     return [entry['value'] for entry in metric_data['values']]
 
 def delete_ids(metric_data, ids):
-    for index in sorted(ids, reverse=True):
-        metric_data['values'].pop(index) # unnecessary O(n**2)
+    to_remove = []
+    ids = set(ids)
+    for v in metric_data['values']:
+        if v.get('id') in ids:
+            to_remove.append(v)
+
+    for entry in to_remove:
+        # Unnecessary O(n**2)
+        metric_data['values'].remove(entry)
 
 def get_ids_values(metric_data):
     return [entry['id'] for entry in metric_data['values'] if entry['id'] is not None]
@@ -85,6 +102,7 @@ def update_ids(metric_data, value_by_id):
         entry_id = entry.get('id')
         if entry_id is not None:
             if entry_id in value_by_id:
+                LOGGER.debug('Changing %r to %r', entry['value'], entry['time'])
                 entry['value'] = float(value_by_id[entry_id])
                 entry['time'] = time.time()
                 updated.add(entry_id)
@@ -93,6 +111,7 @@ def update_ids(metric_data, value_by_id):
         if ident in updated:
             continue
         else:
+            LOGGER.debug('Adding new entry: %r', (ident, value))
             metric_data['values'].append(dict(time=time.time(), id=ident, value=float(value)))
     return ''
 
