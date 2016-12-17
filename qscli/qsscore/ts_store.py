@@ -4,7 +4,6 @@ import collections
 import itertools
 import logging
 import time
-import uuid
 
 LOGGER = logging.getLogger('ts_store')
 
@@ -16,9 +15,6 @@ def init(metric_data):
 
 def get_timeseries(metric_data):
     # Hack fill in uiids to ensure a uniq id
-    for v in metric_data['values']:
-        if v.get('id') is None:
-            v['id'] = str(uuid.uuid1())
 
     return [DataPoint(time=value['time'], value=value['value'], id=value.get('id', 'bad'), index=i) for i, value in enumerate(metric_data['values'])]
 
@@ -93,7 +89,8 @@ def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1
         return result
 
 def store(metric_data, time, value):
-    metric_data['values'].append(dict(time=time, value=value))
+    ident = get_internal_id(metric_data)
+    metric_data['values'].append(dict(time=time, value=value, id=ident))
 
 def update_ids(metric_data, value_by_id):
     "Upsert values by id"
@@ -118,6 +115,8 @@ def update_ids(metric_data, value_by_id):
 def update(metric_data, value, ident):
     init(metric_data)
 
+    ident = ident if ident is not None else get_internal_id(metric_data)
+
     entry = dict(time=time.time(), value=value)
     if ident is not None:
         entry['id'] = ident
@@ -137,3 +136,12 @@ def update(metric_data, value, ident):
     else:
         metric_values[-1] = entry
     return ''
+
+def get_internal_id(metric_data):
+    name = metric_data['name']
+    if '--' in name:
+        raise ValueError('Metric name cannot contain -- {!r}'.format(name))
+
+    seq_id = metric_data.get('sequence', 0)
+    metric_data['sequence'] = seq_id + 1
+    return 'internal--{}--{:08d}'.format(name, seq_id)

@@ -5,6 +5,7 @@ from . import ts_store
 def get_metric_data(data, metric):
     metrics = data.setdefault('metrics', dict())
     metric_data = metrics.setdefault(metric, dict() )
+    metric_data['name'] = metric
     ts_store.init(metric_data)
     return metric_data
 

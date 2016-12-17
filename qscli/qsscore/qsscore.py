@@ -87,13 +87,18 @@ def build_parser():
     json_option(summary_parser)
 
     ident_mx = summary_parser.add_mutually_exclusive_group()
-    ident_mx.add_argument('--id', type=str, help='Show summary for the result with this id')
+    ident_mx.add_argument('--id', type=parse_id, help='Show summary for the result with this id')
     ident_mx.add_argument('--index', type=int, help='Show the nth most recent value', default=0)
 
     list_parser = parsers.add_parser('list', help='List the things that we have scores for')
     json_option(list_parser)
 
     return PARSER
+
+def parse_id(s):
+    if s.startswith('internal--'):
+        raise ValueError('ids cannot start with internal--: %r', s)
+    return s
 
 
 def main():
