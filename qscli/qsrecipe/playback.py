@@ -108,6 +108,7 @@ class Player(object):
     @contextlib.contextmanager
     def with_current_step(self):
         with self.with_playback_data() as playback_data:
+            playback_data['step'].setdefault('commands', [])
             yield playback_data['step']
 
     def record_step(self, step, duration=None, skipped=None):
