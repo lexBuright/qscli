@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import os
 import select
 import sys
@@ -13,13 +14,19 @@ from scipy import stats
 
 import termios
 
+LOGGER = logging.getLogger()
+
 PARSER = argparse.ArgumentParser(description='Work out the frequency of a number of keypresses. Can be used to e.g. track pulse or breathing rate with no hardware. Use C-c to quite.')
+PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 PARSER.add_argument('--confidence', '-c', default=0.95, type=float)
 PARSER.add_argument('--tolerance', '-t', default=5.0, type=float)
 PARSER.add_argument('--show-periods', '-p', action='store_true', help='Show period information about every key press')
 PARSER.add_argument('--raw', '-r', action='store_true', help='Do not clear lines between prints')
 PARSER.add_argument('--json', '-j', action='store_true', help='Output as machine-readable json')
+PARSER.add_argument('--json-interaction', '-J', action='store_true', help='Output intermediate information in json')
 PARSER.add_argument('--auto', '-a', action='store_true', help='Stop as soon as a stable reading is reached')
+
+PARSER.add_argument('--timestamp-input', '-s', action='store_true', help='Get beat times as unix timestamps from standard in')
 PARSER.add_argument('--no-tty', '-T', action='store_true', help='Use stdin and standard out for interactivity (rather than tty)')
 PARSER.add_argument('--beat-file', '-b', type=str, help='Write the timeseries of beats to a file')
 
@@ -40,7 +47,6 @@ def readchar(stream, wait_for_char=True):
     finally:
         termios.tcsetattr(stream, termios.TCSADRAIN, old_settings)
 
-
 def get_character(terminal):
     c = readchar(terminal)
     if c == '\x03': # C-c
@@ -53,17 +59,15 @@ def get_character(terminal):
 
 class ClickTimer(object):
     def __init__(self):
-        self._last_click = None
+        self.beat_time = None
         self.periods = []
         self.frequencies = []
 
-    def click(self):
-        click = time.time()
-        if self._last_click:
-            self.periods.append(click - self._last_click)
-            self.frequencies.append(60.0 / (click - self._last_click))
-        self._last_click = click
-
+    def click(self, click_time):
+        if self.beat_time:
+            self.periods.append(click_time - self.beat_time)
+            self.frequencies.append(60.0 / (click_time - self.beat_time))
+        self.beat_time = click_time
 
 class TerminalDisplay(object):
     def __init__(self, terminal, raw):
@@ -107,7 +111,7 @@ class InfoFormatter(object):
         return result
 
 def calculate_bpm(timer, confidence, tolerance):
-    beat_time = time.time()
+    beat_time = timer.beat_time
     result = non_result = None
 
     if timer.periods:
@@ -167,57 +171,98 @@ def format_result(formatter, periods, result, non_result):
 
 def main():
     args = PARSER.parse_args()
-    if args.no_tty:
+    if args.no_tty or args.timestamp_input:
         interactive_in = sys.stdin
         interactive_out = sys.stdout
     else:
         interactive_in = interactive_out = open('/dev/tty', 'w+')
 
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+
     beat_stream = args.beat_file and open(args.beat_file, 'w')
 
     timer = ClickTimer()
-    display = TerminalDisplay(interactive_out, args.raw)
+    display = TerminalDisplay(interactive_out, args.raw or args.timestamp_input)
 
     formatter = InfoFormatter(args.show_periods)
 
-    display.show('Press any key at a rate. Enter to finish result written to stdout\n')
     result = None
+
+    if args.timestamp_input:
+        beater = StreamBeater()
+    else:
+        beater = InteractiveBeater(interactive_in)
+        display.show('Press any key at a rate. Enter to finish result written to stdout\n')
 
     result = None
     while not args.auto or result is None:
-        if get_character(interactive_in):
+        beat_time = beater.next_beat()
+
+        LOGGER.debug('Beat time: %r', beat_time)
+
+        if beat_time is None:
             break
-        timer.click()
+
+        timer.click(beat_time)
         if not timer.periods:
             continue
 
         result, non_result = calculate_bpm(timer, args.confidence, args.tolerance)
-        output = format_result(formatter, timer.periods, result, non_result)
-        display.show(output)
+
+        if not args.json_interaction:
+            output = format_result(formatter, timer.periods, result, non_result)
+            display.show(output)
+        else:
+            display.show(format_final_result(result, True, False))
 
         if beat_stream:
             write_beat(beat_stream, result or non_result)
 
     display.clear()
-    show_result(result or non_result, args.json)
+    print format_final_result(result or non_result, args.json, True)
+
+class InteractiveBeater(object):
+    "Get beats from the keyboard"
+    def __init__(self, interactive_in):
+        self._interactive_in = interactive_in
+
+    def next_beat(self):
+        finished = get_character(self._interactive_in)
+        if finished:
+            return None
+        else:
+            return time.time()
+
+class StreamBeater(object):
+    "Read unix timestamps from stdin for beat times"
+
+    def next_beat(self):
+        line = sys.stdin.readline()
+        if line == '':
+            return None
+        else:
+            return float(line.strip())
 
 def write_beat(beat_stream, result):
     beat_stream.write(json.dumps(result))
     beat_stream.write('\n')
     beat_stream.flush()
 
-def show_result(result, is_json):
+def format_final_result(result, is_json, is_final):
     if is_json:
         if result is None:
-            print json.dumps(dict(status='did-no-stabilise'))
+            return json.dumps(dict(status='did-no-stabilise', final=is_final))
         else:
-            print json.dumps(result)
+            result = result.copy()
+            result['final'] = is_final
+            return json.dumps(result)
     else:
         if result is None:
             print 'Did not find a reading'
             sys.exit(1)
         else:
-            print result['estimate']
+            return result['estimate']
 
 def show_output(terminal, raw, string):
     if raw:
