@@ -1,11 +1,15 @@
 import datetime
+import json
 import time
 
 from . import data
 
-def show_history_item(app_data, name):
+def show_history_item(app_data, name, is_json):
     playback = app_data['past_playbacks'][name]
-    display_full_playback(playback)
+    if not is_json:
+        display_full_playback(playback)
+    else:
+        raise NotImplementedError()
 
 def sorted_past_playbacks(app_data):
     def sort_key((k, v)):
@@ -13,10 +17,21 @@ def sorted_past_playbacks(app_data):
 
     return sorted(app_data['past_playbacks'].items(), key=sort_key)
 
-def show_history(app_data):
+def show_history(app_data, is_json):
     app_data.setdefault('past_playbacks', dict())
+    result = []
+    json_entries = []
     for name, playback_data in sorted_past_playbacks(app_data):
-        print name, playback_data['recipe_name'], playback_data['recipe'].get('content_id')[:10]
+        start_time = playback_data['start']
+        long_content_id = playback_data['recipe'].get('content_id')
+        short_content_id = long_content_id[:10]
+        recipe_name = playback_data['recipe_name']
+        result.append('{} {} {}'.format(name, recipe_name, short_content_id))
+        json_entries.append(dict(name=name, recipe_name=recipe_name, content_id=long_content_id, start_time=start_time))
+    if is_json:
+        print json.dumps(dict(result=json_entries))
+    else:
+        print '\n'.join(result)
 
 def display_full_playback(playback):
     print 'Recipe', playback['recipe_name']

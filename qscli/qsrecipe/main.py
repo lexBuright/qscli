@@ -32,6 +32,7 @@ def build_parser():
 
     history_parser = parsers.add_parser('history', help='Show the history of playbacks')
     history_parser.add_argument('name', type=str, nargs='?')
+    history_parser.add_argument('--json', '-j', action='store_true', help='Output machine-readable json')
 
     status_parser = parsers.add_parser('status', help='Show the status of a playback')
     status_parser.add_argument('playback', type=str, help='Name of the playback')
@@ -168,9 +169,9 @@ def run(args):
             show_play_notes(app_data, options.playback)
         elif options.command == 'history':
             if options.name:
-                history.show_history_item(app_data, options.name)
+                history.show_history_item(app_data, options.name, options.json)
             else:
-                history.show_history(app_data)
+                history.show_history(app_data, options.json)
         else:
             raise ValueError(options.command)
 
