@@ -19,8 +19,9 @@ LOGGER = logging.getLogger()
 PARSER = argparse.ArgumentParser(description='Work out the frequency of a number of keypresses. Can be used to e.g. track pulse or breathing rate with no hardware. Use C-c to quite.')
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 PARSER.add_argument('--confidence', '-c', default=0.95, type=float)
-PARSER.add_argument('--tolerance', '-t', default=5.0, type=float)
-PARSER.add_argument('--show-periods', '-p', action='store_true', help='Show period information about every key press')
+PARSER.add_argument('--tolerance', '-t', type=float)
+PARSER.add_argument('--percent-tolerance', '-p', type=float)
+PARSER.add_argument('--show-periods', '-P', action='store_true', help='Show period information about every key press')
 PARSER.add_argument('--raw', '-r', action='store_true', help='Do not clear lines between prints')
 PARSER.add_argument('--json', '-j', action='store_true', help='Output as machine-readable json')
 PARSER.add_argument('--json-interaction', '-J', action='store_true', help='Output intermediate information in json')
@@ -110,7 +111,13 @@ class InfoFormatter(object):
 
         return result
 
-def calculate_bpm(timer, confidence, tolerance):
+def xor(a, b):
+    return bool(a) != bool(b)
+
+def calculate_bpm(timer, confidence, absolute_tolerance=None, percent_tolerance=None):
+    if not xor(absolute_tolerance, percent_tolerance):
+        raise Exception('Precisely one of absolute_tolerance and percent_tolerance must be specified')
+
     beat_time = timer.beat_time
     result = non_result = None
 
@@ -125,7 +132,11 @@ def calculate_bpm(timer, confidence, tolerance):
             (lower, mid, upper) = triple
             plus_minus = (upper - lower) / 2.0
 
-            if plus_minus < tolerance:
+            converged = (
+                absolute_tolerance is not None and plus_minus < absolute_tolerance or
+                percent_tolerance is not None and plus_minus * 100 < percent_tolerance * mid)
+
+            if converged:
                 result = dict(
                     estimate=mid,
                     plus_minus=plus_minus,
@@ -208,7 +219,13 @@ def main():
         if not timer.periods:
             continue
 
-        result, non_result = calculate_bpm(timer, args.confidence, args.tolerance)
+        args.tolerance = 5.0 if args.tolerance is None and args.percent_tolerance is None else args.tolerance
+
+        result, non_result = calculate_bpm(
+            timer,
+            args.confidence,
+            absolute_tolerance=args.tolerance,
+            percent_tolerance=args.percent_tolerance)
 
         if not args.json_interaction:
             output = format_result(formatter, timer.periods, result, non_result)
