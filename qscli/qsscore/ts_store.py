@@ -89,7 +89,7 @@ def get_last_values(metric_data, num, ident=None, id_series=None, ident_period=1
         return result
 
 def store(metric_data, time, value):
-    ident = get_internal_id(metric_data)
+    ident = _get_internal_id(metric_data)
     metric_data['values'].append(dict(time=time, value=value, id=ident))
 
 def update_ids(metric_data, value_by_id):
@@ -115,29 +115,26 @@ def update_ids(metric_data, value_by_id):
 def update(metric_data, value, ident):
     init(metric_data)
 
-    ident = ident if ident is not None else get_internal_id(metric_data)
-
-    entry = dict(time=time.time(), value=value)
-    if ident is not None:
-        entry['id'] = ident
-
     metric_values = metric_data['values']
+
+    if metric_values:
+        ident = ident or metric_values[-1]['id']
+    else:
+        ident = ident or _get_internal_id(metric_data)
+
+    entry = dict(time=time.time(), value=value, id=ident)
 
     if not metric_values:
         metric_values.append(entry)
-
-    if ident is not None:
+    else:
         ident_entries = [x for x in metric_values if x.get('id') == ident]
         if ident_entries:
             ident_entry, = ident_entries
             ident_entry['value'] = value
         else:
             metric_values.append(entry)
-    else:
-        metric_values[-1] = entry
-    return ''
 
-def get_internal_id(metric_data):
+def _get_internal_id(metric_data):
     name = metric_data['name']
     if '--' in name:
         raise ValueError('Metric name cannot contain -- {!r}'.format(name))

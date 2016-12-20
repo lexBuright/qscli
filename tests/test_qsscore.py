@@ -82,6 +82,13 @@ class TestCli(unittest.TestCase):
         second_metric_line, = [l for l in lines if 'second-metric' in l]
         self.assertTrue('3.0' in second_metric_line)
 
+    def test_update(self):
+        self.cli(['store', 'metric', '1'])
+        self.cli(['update', 'metric', '2'])
+        data = json.loads(self.cli(['log', 'metric', '--json']))
+        value, = data
+        self.assertEquals(value['value'], 2)
+
     def test_store_csv(self):
         self.cli(['store', 'other-metric', '1337'])
         first_metric_csv = '1,11\n2,12\n'
