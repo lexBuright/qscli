@@ -17,6 +17,9 @@ def add_subparser(parser):
     settings_prompt(new_endurance, True)
 
     start_parser = sub.add_parser('start')
+    start_parser.add_argument('--period', type=float, help='Displa every PERIOD seconds')
+    start_parser.add_argument('--active-period', type=float, help='Display every PERIOD seconds while active')
+    start_parser.add_argument('--resting-period', type=float, help='Displa every PERIOD seconds while resting')
     parsers.exercise_prompt(start_parser, required=False)
     settings_prompt(start_parser, False)
 
@@ -58,7 +61,9 @@ def run(args):
     if args.interval_action == 'new':
         new_exercise(args.exercise, args.active_time, args.rest_time, args.incline, args.speed)
     elif args.interval_action == 'start':
-        start(args.exercise)
+        active_show_period = args.active_period if args.active_period is not None else args.period
+        resting_show_period = args.resting_period if args.resting_period is not None else args.period
+        start(args.exercise, active_show_period, resting_show_period)
     elif args.interval_action == 'stop':
         stop()
     elif args.interval_action == 'stats':
@@ -208,7 +213,7 @@ def get_score_name():
 
     return 'exercise.score.interval.{}.speed:{}.incline:{}.active:{}.rest:{}'.format(exercise, speed_string, incline_string, int(active_period), int(rest_period))
 
-def start(exercise):
+def start(exercise, active_show_period, resting_show_period):
     if exercise is not None:
         Data.set_interval_exercise(exercise)
 
@@ -227,6 +232,7 @@ def start(exercise):
     print 'Start', exercise
     for index in itertools.count(1):
         # IMPROVEMENT: Ideally this would immediately break when the clock stops
+
         data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
         if not data['running']:
             break
@@ -234,7 +240,12 @@ def start(exercise):
         print '{} for {} seconds'.format(exercise, active_period)
         print '\n\n'
 
-        time.sleep(active_period)
+        for _ in loop_for(active_period, active_show_period):
+            if not data['running']:
+                break
+            stats()
+            print '\n\n'
+
         data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
         if not data['running']:
             break
@@ -244,8 +255,27 @@ def start(exercise):
         print SCORER.get().run(['summary', score_name, '--update']).encode('utf8')
         print '\n\n'
 
-        time.sleep(rest_period)
+        for _ in loop_for(rest_period, resting_show_period):
+            if not data['running']:
+                break
+
+            stats()
+            print '\n\n'
+
     print 'Finished'
+
+def loop_for(complete_period, loop_period):
+    start = time.time()
+    while True:
+        if time.time() - start > complete_period:
+            break
+        else:
+            if loop_period is None:
+                time.sleep(complete_period)
+            else:
+                sleep_period = max(min(start + complete_period, time.time() + loop_period) - time.time(), 0)
+                time.sleep(sleep_period)
+        yield None
 
 def stop():
     print 'Stopping'
