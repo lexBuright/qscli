@@ -19,6 +19,13 @@ class TimeseriesTest(unittest.TestCase):
         if result is not None:
             return ''.join(result)
 
+    def test_series(self):
+        self.run_cli('append', 'metric', '1')
+        self.run_cli('append', 'other-metric', '2')
+        self.run_cli('series') # just ensure this doesn't crash
+        result = json.loads(self.run_cli('series', '--json'))
+        self.assertEquals(set([x['name'] for x in result['series']]), set(['metric', 'other-metric']))
+
     def test_basic(self):
         self.run_cli('append', 'metric', '1')
         self.run_cli('append', 'other-metric', '2')

@@ -150,6 +150,7 @@ def build_parser():
     series_command = parsers.add_parser('series', help='List the series')
     series_command.add_argument('--quiet', '-q', action='store_true', help='Only show names')
     series_command.add_argument('--prefix', '-p', type=str, help='Find series with this prefix')
+    series_command.add_argument('--json', '-J', action='store_true', help='Produce output in machine readable json')
 
     aggregate_command = parsers.add_parser('aggregate', help='Combine together values over different periods')
     aggregate_command.add_argument('period', type=time_period, help='Aggregate values over this period')
@@ -243,7 +244,7 @@ def run(args):
             missing_value=options.missing_value,
             include_missing=options.missing)
     elif options.command == 'series':
-        return show_series(db, prefix=options.prefix)
+        return show_series(db, prefix=options.prefix, is_json=options.json)
     else:
         raise ValueError(options.command)
 
@@ -365,18 +366,25 @@ def delete(db, series, ids=None, indexes=None):
         db.commit()
 
 
-def show_series(db, prefix=None):
+def show_series(db, prefix, is_json):
     cursor = db.cursor()
     cursor.execute('''
     SELECT series FROM timeseries GROUP BY 1 ORDER BY 1
     ''')
+    json_result = []
     result = []
     for name, in cursor.fetchall():
         if prefix:
             if not name.startswith(prefix):
                 continue
         result.append("{}\n".format(name))
-    return ''.join(result),
+        json_result.append(dict(name=name))
+    if is_json:
+        return json.dumps(dict(series=json_result)),
+    else:
+        return ''.join(result),
+
+
 
 if __name__ == '__main__':
 	main()
