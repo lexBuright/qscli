@@ -145,8 +145,9 @@ class Player(object):
             playbacks = app_data.setdefault('playbacks', {})
             all_recipes = app_data.setdefault('all_recipes', {})
 
+            LOGGER.debug('Playbacks %r', playbacks)
             if self._name in playbacks:
-                raise Exception('There is a already a player called {}. Use a different name'.format(self._name))
+                raise Exception('There is already a player called {}. Use a different name'.format(self._name))
 
             with data.with_recipe(app_data, self._recipe_name) as recipe:
                 all_recipes[recipe['content_id']] = recipe
@@ -201,6 +202,7 @@ class AbandonedStep(Exception):
     """Abandon the current step after it was started"""
 
 def stop(app_data, playback, error=True):
+    LOGGER.debug('Stopping %r', playback)
     app_data.setdefault('past_playbacks', dict())
 
     if not error:
