@@ -6,8 +6,10 @@ import logging
 import re
 
 from . import data
+from . import errors
 from ..symbol import Symbol
 
+DELETE = Symbol('Delete')
 SPLIT = Symbol('Split')
 LOGGER = logging.getLogger('qsrecipe.recipe')
 
@@ -28,7 +30,7 @@ def list_recipes(app_data, anon):
 
     return '\n'.join(result)
 
-def add(app_data, recipe_name, step, start_time, index, duration, step_commands):
+def add(app_data, recipe_name, step, start_time, index, duration, step_commands, format_command):
     with data.with_recipe(app_data, recipe_name) as recipe:
         if not recipe['steps']:
             last_step_time = 0
@@ -59,6 +61,7 @@ def add(app_data, recipe_name, step, start_time, index, duration, step_commands)
                 step['start_offset'] += duration
 
         step['commands'] = step_commands or []
+        step['format_command'] = format_command or []
 
         sort_steps(recipe)
 
@@ -103,8 +106,9 @@ def find_step(recipe, index):
 
 def edit(
         app_data, recipe_name,
-        index=None, text=None, before=None, after=None,
-        exact_time=None, add_command=None, delete_command_index=None, clear_commands=None
+        index=None, text=None, before=None, after=None, exact_time=None,
+        add_command=None, delete_command_index=None, clear_commands=None,
+        format_command=None
         ):
     if exact_time:
         if (before is not None or after is not None) and exact_time is not None:
@@ -142,6 +146,12 @@ def edit(
         if delete_command_index is not None:
             step['commands'].pop(delete_command_index)
 
+        if format_command is not None:
+            if format_command == DELETE:
+                step['format_command'] = None
+            else:
+                step['format_command'] = format_command
+
         if clear_commands:
             step['commands'] = []
 
@@ -171,9 +181,11 @@ def show(app_data, recipe_name, is_json):
         if is_json:
             result = dict(steps=[])
             for step in recipe['steps']:
+                step.setdefault('format_command', None)
                 # Add an indirection layer between
                 #   external and internal format
                 result['steps'].append(dict(
+                    format_command=step['format_command'],
                     commands=step['commands'],
                     text=step['text'],
                     start_offset=step['start_offset']
@@ -215,6 +227,10 @@ def format_seconds(seconds):
 def add_options(parsers):
     "Add those options for handling recipes to the main parser"
 
+    def format_command(parser):
+        parser.add_argument('--format-command', type=parse_command, help='Run this command to produce the text output', dest='format_command')
+        parser.add_argument('--clear-format-command', action='store_const', help='Clear the format command', dest='format_command', const=DELETE)
+
     move_parser = parsers.add_parser('move', help='Move a step while keeping all durations the same')
     move_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
     move_parser.add_argument('old_index', type=int, help='Step to move')
@@ -233,6 +249,7 @@ def add_options(parsers):
     edit_commands.add_argument('--add-command', action='append', type=parse_command, help='Add a command to run when the step starts')
     edit_commands.add_argument('--clear-commands', action='store_true', help='Clear all commands')
     edit_commands.add_argument('--delete-command', metavar='INDEX', type=int, help='Delete a command at an index')
+    format_command(edit_commands)
 
     list_parser = parsers.add_parser('list', help='Add an action to a recipe')
     list_parser.add_argument('--anon', '-a', action='store_true', help='Include anonymous recipes (old recipes)')
@@ -253,6 +270,7 @@ def add_options(parsers):
         '--duration', type=parse_absolute_time,
         help='How long the step should last. (Does not work for final argument)', default=None)
     add_parser.add_argument('--command', action='append', type=parse_command, help='Add a command to run when the step starts', dest='step_command')
+    format_command(add_parser)
 
 
 class IntegerCoord(object):
@@ -315,3 +333,36 @@ def list_split(split_item, lst):
             part.append(item)
     if part:
         yield part
+
+def handle_command(app_data, options):
+    if options.command == 'add':
+        return add(
+            app_data,
+            options.recipe, options.step, options.time,
+            options.index, options.duration,
+            options.step_command, options.format_command)
+    elif options.command == 'move':
+        return move(app_data, options.recipe, options.old_index, options.new_index)
+    elif options.command == 'edit':
+        return edit(
+            app_data, options.recipe,
+            index=options.index,
+            after=options.after,
+            before=options.before,
+            text=options.text,
+            exact_time=options.exact,
+            add_command=options.add_command,
+            delete_command_index=options.delete_command,
+            clear_commands=options.clear_commands,
+            format_command=options.format_command,
+            )
+    elif options.command == 'list':
+        return list_recipes(app_data, options.anon)
+    elif options.command == 'delete':
+        return delete_recipes(app_data, options.recipes)
+    elif options.command == 'delete-step':
+        return delete_step(app_data, options.recipe, options.index)
+    elif options.command == 'show':
+        return show(app_data, options.recipe, options.json)
+    else:
+        return errors.NoCommand()

@@ -2,11 +2,11 @@
 
 import contextlib
 import itertools
+import json
 import logging
 import time
 
-from . import data
-from . import history
+from . import data, history
 from .. import os_utils
 
 LOGGER = logging.getLogger('playback')
@@ -66,8 +66,8 @@ class Player(object):
 
                 next_step['started_at'] = time.time()
                 self.next_step(next_step)
-                print next_step['text']
                 self._run_commands()
+                print self.format_step()
                 step_duration = next_step['duration']
                 del next_step
 
@@ -84,11 +84,20 @@ class Player(object):
             if step is None:
                 return
             for command in step['commands']:
-                self._run_command(command, self._command_info(step))
+                print self._run_command(command, self._command_info(step))
+
+    def format_step(self):
+        with self.with_current_step() as step:
+            if step is None:
+                return
+            elif step['format_command']:
+                return self._run_command(step['format_command'], self._command_info(step))
+            else:
+                return step['text']
 
     def _run_command(self, command, info):
         command = [c.format(**info) for c in command]
-        print os_utils.backticks(command).strip().strip('\n')
+        return os_utils.backticks(command).strip().strip('\n')
 
     def _command_info(self, step):
         return dict(
@@ -109,6 +118,7 @@ class Player(object):
     def with_current_step(self):
         with self.with_playback_data() as playback_data:
             playback_data['step'].setdefault('commands', [])
+            playback_data['step'].setdefault('format_command', [])
             yield playback_data['step']
 
     def record_step(self, step, duration=None, skipped=None):

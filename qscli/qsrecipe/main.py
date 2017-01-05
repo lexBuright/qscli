@@ -17,7 +17,7 @@ import sys
 import time
 import unittest
 
-from . import data, history, playback, recipe
+from . import data, history, playback, recipe, errors
 
 LOGGER = logging.getLogger()
 
@@ -122,6 +122,11 @@ def run(args):
         return player.play()
 
     with data.with_data(data_path) as app_data:
+        try:
+            return recipe.handle_command(app_data, options)
+        except errors.NoCommand:
+            pass
+
         if options.command == 'playing':
             return playing(app_data)
         elif options.command == 'status':
@@ -134,33 +139,6 @@ def run(args):
             playback.delay_step(app_data, options.playback, options.seconds, options.reason)
         elif options.command == 'abandon':
             playback.abandon_step(app_data, options.playback)
-        elif options.command == 'add':
-            return recipe.add(
-                app_data,
-                options.recipe, options.step, options.time,
-                options.index, options.duration, options.step_command)
-        elif options.command == 'move':
-            return recipe.move(app_data, options.recipe, options.old_index, options.new_index)
-        elif options.command == 'edit':
-            return recipe.edit(
-                app_data, options.recipe,
-                index=options.index,
-                after=options.after,
-                before=options.before,
-                text=options.text,
-                exact_time=options.exact,
-                add_command=options.add_command,
-                delete_command_index=options.delete_command,
-                clear_commands=options.clear_commands,
-                )
-        elif options.command == 'list':
-            return recipe.list_recipes(app_data, options.anon)
-        elif options.command == 'delete':
-            return recipe.delete_recipes(app_data, options.recipes)
-        elif options.command == 'delete-step':
-            return recipe.delete_step(app_data, options.recipe, options.index)
-        elif options.command == 'show':
-            return recipe.show(app_data, options.recipe, options.json)
         elif options.command == 'playing':
             list_playbacks(app_data, options)
         elif options.command == 'playnote':
