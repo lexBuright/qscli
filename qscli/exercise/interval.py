@@ -20,9 +20,23 @@ def add_subparser(parser):
     settings_prompt(new_endurance, True)
 
     start_parser = sub.add_parser('start')
-    start_parser.add_argument('--period', type=float, help='Displa every PERIOD seconds')
-    start_parser.add_argument('--active-period', type=float, help='Display every PERIOD seconds while active')
-    start_parser.add_argument('--resting-period', type=float, help='Displa every PERIOD seconds while resting')
+    start_parser.add_argument(
+        '--show-period',
+        type=float,
+        help='Display every PERIOD seconds',
+        metavar='PERIOD')
+    start_parser.add_argument(
+        '--active-show-period',
+        type=float,
+        help='Display every PERIOD seconds while active',
+        metavar='PERIOD'
+        )
+    start_parser.add_argument(
+        '--resting-show-period',
+        type=float,
+        help='Display every PERIOD seconds while resting',
+        metavar='PERIOD'
+        )
     parsers.exercise_prompt(start_parser, required=False)
     settings_prompt(start_parser, False)
 
@@ -64,8 +78,8 @@ def run(args):
     if args.interval_action == 'new':
         new_exercise(args.exercise, args.active_time, args.rest_time, args.incline, args.speed)
     elif args.interval_action == 'start':
-        active_show_period = args.active_period if args.active_period is not None else args.period
-        resting_show_period = args.resting_period if args.resting_period is not None else args.period
+        active_show_period = args.active_show_period if args.active_show_period is not None else args.show_period
+        resting_show_period = args.resting_show_period if args.resting_show_period is not None else args.show_period
         start(args.exercise, active_show_period, resting_show_period, args.active_time, args.rest_time)
     elif args.interval_action == 'stop':
         stop()
@@ -227,7 +241,7 @@ def start(exercise, active_show_period, resting_show_period, active_time, rest_t
         Data.set_interval_rest(rest_time)
 
     exercise = Data.get_interval_exercise()
-    active_period = active_time or Data.get_interval_active()
+    active_time = active_time or Data.get_interval_active()
     rest_period = rest_time or Data.get_interval_rest()
 
     data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
@@ -246,10 +260,10 @@ def start(exercise, active_show_period, resting_show_period, active_time, rest_t
         if not data['running']:
             break
 
-        print '{} for {} seconds'.format(exercise, active_period)
+        print '{} for {} seconds'.format(exercise, active_time)
         print '\n\n'
 
-        for _ in loop_for(active_period, active_show_period):
+        for _ in loop_for(active_time, active_show_period):
             if not data['running']:
                 break
             stats()
@@ -304,17 +318,17 @@ def stats():
     print speed, incline, active, rest
     print
 
-    active_period = Data.get_interval_active()
-    rest_period = Data.get_interval_rest()
+    active_time = Data.get_interval_active()
+    rest_time = Data.get_interval_rest()
 
-    cycle_offset = data['duration'] % (active_period + rest_period)
-    if cycle_offset <= active_period:
-        remaining = active_period - cycle_offset
-        print '{} Interval {:.1f}/{:1f} ({:.1f} remaining)'.format(exercise, cycle_offset, active_period, remaining)
+    cycle_offset = data['duration'] % (active_time + rest_time)
+    if cycle_offset <= active_time:
+        remaining = active_time - cycle_offset
+        print '{} Interval {:.1f}/{:1f} ({:.1f} remaining)'.format(exercise, cycle_offset, active_time, remaining)
     else:
-        remaining = active_period + rest_period - cycle_offset
-        done = cycle_offset - active_period
-        print '{} Rest {:.1f}/{:.1f} ({:.1f} remaining)'.format(exercise, done, rest_period, remaining)
+        remaining = active_time + rest_time - cycle_offset
+        done = cycle_offset - active_time
+        print '{} Rest {:.1f}/{:.1f} ({:.1f} remaining)'.format(exercise, done, rest_time, remaining)
     print SCORER.get().run(['summary', score_name, '--update']).encode('utf8')
 
 def new_exercise(exercise, active_time, resting_time, incline, speed):
