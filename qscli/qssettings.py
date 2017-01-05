@@ -3,7 +3,6 @@
 """
 qssettings show # prompt for a setting name and print it
 qssettings set # prompt for a setting name and print it
-
 """
 
 import argparse
@@ -35,7 +34,8 @@ PARSER.add_argument('--prefix', '-P', help='Prefix for settings in qstimeseries'
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 
 parsers = PARSER.add_subparsers(dest='action')
-show_parser = parsers.add_parser('show', help='')
+show_parser = parsers.add_parser('list', help='List all settings')
+show_parser = parsers.add_parser('show', help='Show a setting')
 name_setting(show_parser)
 update_parser = parsers.add_parser('update', help='Update a setting')
 name_setting(update_parser)
@@ -58,7 +58,9 @@ def run(prompter, args):
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    if args.action == 'show':
+    if args.action == 'list':
+        return list_settings(store)
+    elif args.action == 'show':
         return show_setting(store, prompter, args.name)
     elif args.action == 'update':
         return update_setting(store, prompter, args.name, args.value)
@@ -70,7 +72,7 @@ def run(prompter, args):
 class ValueStore(object):
     def __init__(self, config_dir, prefix):
         self._config_dir = config_dir
-        self._prefix = prefix.strip('.') + '.'
+        self._prefix = prefix.strip('.') + '.' if prefix else ''
 
     def get_current(self, name):
         data = json.loads(
@@ -86,7 +88,7 @@ class ValueStore(object):
         if data:
             return data[-1]['value']
         else:
-            return IndexError
+            raise IndexError
 
     def get_setting_names(self):
         result = json.loads(self.timeseries(['series', '--json']))
@@ -103,6 +105,9 @@ class ValueStore(object):
 
     def timeseries(self, command):
         return shell_collect(['qstimeseries', '--config-dir', self._config_dir] + command)
+
+def list_settings(store):
+    return '\n'.join(store.get_setting_names())
 
 def show_setting(store, prompter, name):
     if name == PROMPT:
