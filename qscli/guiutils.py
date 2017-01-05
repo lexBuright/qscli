@@ -22,10 +22,15 @@ def combo_prompt(prompt, choices):
     else:
         return reply.strip()
 
-def _prompt_for_thing(prompt, parse):
+def _prompt_for_thing(prompt, parse, default):
     while True:
+        command = ['zenity', '--entry', '--text', prompt]
+
+        if default is not None:
+            command += ['--entry-text', str(default)]
+
         p = subprocess.Popen(
-            ['zenity', '--entry', '--text', prompt],
+            command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         reply, _ = p.communicate('')
         try:
@@ -34,14 +39,14 @@ def _prompt_for_thing(prompt, parse):
             # Give people time to press C-c
             time.sleep(0.5)
 
-def float_prompt(prompt):
-    return _prompt_for_thing(prompt, float)
+def float_prompt(prompt, default=None):
+    return _prompt_for_thing(prompt, float, default)
 
-def int_prompt(prompt):
-    return _prompt_for_thing(prompt, int)
+def int_prompt(prompt, default=None):
+    return _prompt_for_thing(prompt, int, default)
 
-def str_prompt(prompt):
-    return _prompt_for_thing(prompt, str)
+def str_prompt(prompt, default=None):
+    return _prompt_for_thing(prompt, str, default)
 
 def run_in_window(command):
     "Run an interactive terminal command in a new window"
@@ -56,5 +61,3 @@ def run_in_window(command):
                 return result
             else:
                 time.sleep(0.2)
-
-
