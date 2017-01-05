@@ -2,7 +2,6 @@
 
 import contextlib
 import itertools
-import json
 import logging
 import time
 
@@ -67,7 +66,8 @@ class Player(object):
                 next_step['started_at'] = time.time()
                 self.next_step(next_step)
                 self._run_commands()
-                print self.format_step()
+                with self.with_current_step() as current_step:
+                    print format_step(self._name, current_step)
                 step_duration = next_step['duration']
                 del next_step
 
@@ -84,26 +84,7 @@ class Player(object):
             if step is None:
                 return
             for command in step['commands']:
-                print self._run_command(command, self._command_info(step))
-
-    def format_step(self):
-        with self.with_current_step() as step:
-            if step is None:
-                return
-            elif step['format_command']:
-                return self._run_command(step['format_command'], self._command_info(step))
-            else:
-                return step['text']
-
-    def _run_command(self, command, info):
-        command = [c.format(**info) for c in command]
-        return os_utils.backticks(command).strip().strip('\n')
-
-    def _command_info(self, step):
-        return dict(
-            name=self._name,
-            text=step['text']
-            )
+                print _run_command(command, _command_info(self._name, step))
 
     def store_recipe(self, recipe):
         with self.with_playback_data() as playback_data:
@@ -234,13 +215,15 @@ def playback_status(app_data, playback, verbose):
 
         duration = playing_step['duration']
 
+        text = format_step(playback, playing_step)
+
         if delay_until and time.time() < delay_until:
             relative_delay = delay_until - time.time()
-            return 'DELAYED FOR {:.0f}s BECAUSE {}: {} {}'.format(relative_delay, delay_reason, duration, playing_step['text'])
+            return 'DELAYED FOR {:.0f}s BECAUSE {}: {} {}'.format(relative_delay, delay_reason, duration, text)
         else:
             progress = time.time() - (delay_until or playing_step['started_at'])
             percent_progress = float(progress) / playing_step['duration'] * 100
-            return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, playing_step['text'])
+            return '{:.0f}s/{:.0f}s ({:.0f}%) {}'.format(progress, duration, percent_progress, text)
     else:
         history.display_full_playback(app_data['playbacks'][playback])
 
@@ -255,3 +238,22 @@ def abandon_step(app_data, playback):
 def delay_step(app_data, playback, seconds, reason):
     playback_data = app_data['playbacks'][playback]
     playback_data['step']['delays'].append(dict(end_time=time.time() + seconds, reason=reason))
+
+def format_step(name, step):
+    if step is None:
+        return
+    elif step['format_command']:
+        return _run_command(step['format_command'], _command_info(name, step))
+    else:
+        return step['text']
+
+def _run_command(command, info):
+    command = [c.format(**info) for c in command]
+    return os_utils.backticks(command).strip().strip('\n')
+
+
+def _command_info(name, step):
+    return dict(
+        name=name,
+        text=step['text']
+        )
