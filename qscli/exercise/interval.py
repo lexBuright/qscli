@@ -63,7 +63,7 @@ def run(args):
     elif args.interval_action == 'start':
         active_show_period = args.active_period if args.active_period is not None else args.period
         resting_show_period = args.resting_period if args.resting_period is not None else args.period
-        start(args.exercise, active_show_period, resting_show_period)
+        start(args.exercise, active_show_period, resting_show_period, args.active_time, args.rest_time)
     elif args.interval_action == 'stop':
         stop()
     elif args.interval_action == 'stats':
@@ -213,13 +213,19 @@ def get_score_name():
 
     return 'exercise.score.interval.{}.speed:{}.incline:{}.active:{}.rest:{}'.format(exercise, speed_string, incline_string, int(active_period), int(rest_period))
 
-def start(exercise, active_show_period, resting_show_period):
+def start(exercise, active_show_period, resting_show_period, active_time, rest_time):
     if exercise is not None:
         Data.set_interval_exercise(exercise)
 
+    if active_time is not None:
+        Data.set_interval_active(active_time)
+
+    if rest_time is not None:
+        Data.set_interval_rest(rest_time)
+
     exercise = Data.get_interval_exercise()
-    active_period = Data.get_interval_active()
-    rest_period = Data.get_interval_rest()
+    active_period = active_time or Data.get_interval_active()
+    rest_period = rest_time or Data.get_interval_rest()
 
     data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
     if data['running']:
@@ -311,6 +317,8 @@ def stats():
 def new_exercise(exercise, active_time, resting_time, incline, speed):
     if exercise == const.PROMPT:
         exercise_name = guiutils.combo_prompt('interval_exercise', Data.get_interval_exercises())
+    else:
+        exercise_name = exercise
 
     if speed == const.PROMPT:
         speed = guiutils.float_prompt('Speed')
