@@ -31,7 +31,7 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
-    for logger_name in args.hide_debug:
+    for logger_name in (args.hide_debug or []):
         logger = logging.getLogger(logger_name)
         logger.setLevel(logging.CRITICAL)
 
