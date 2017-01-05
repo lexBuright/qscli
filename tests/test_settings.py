@@ -37,6 +37,13 @@ class TestQssettings(unittest.TestCase):
         self.run_cli('update')
         self.assertEquals(self.run_cli('show'), '2.0')
 
+
+    def test_prompter_empty(self):
+        self.prompter.set_value('Value:', 2.0)
+        self.prompter.set_value('Which setting:', 'setting1')
+        self.run_cli('update')
+        self.assertEquals(self.run_cli('show'), '2.0')
+
 class FakePrompter(object):
     def __init__(self):
         self._values = {}

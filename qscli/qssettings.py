@@ -82,7 +82,11 @@ class ValueStore(object):
                 '--series', self._prefix + name,
                 '--json']))
         data.sort(key=lambda x: x['id'])
-        return data[-1]['value']
+
+        if data:
+            return data[-1]['value']
+        else:
+            return IndexError
 
     def get_setting_names(self):
         result = json.loads(self.timeseries(['series', '--json']))
@@ -117,7 +121,11 @@ def update_setting(store, prompter, name, value):
         name = prompt_for_name(prompter, store)
 
     if value == PROMPT:
-        old = store.get_current(name)
+        try:
+            old = store.get_current(name)
+        except IndexError:
+            old = None
+
         value = prompt_for_value(prompter, store, default=old)
 
     store.update(name, value)
