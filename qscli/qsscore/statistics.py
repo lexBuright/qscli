@@ -114,7 +114,7 @@ def summary_format(data, update):
     if not data['is_first']:
         messages.append('{} best'.format(ordinal_name(data['rank'] + 1)))
         messages.append('Quantile: {:.2f}'.format(data['quantile']))
-        messages.append('Ratio of best: {:.2f}'.format(data['best_ratio']))
+        messages.append('Ratio of best: {:.2f}'.format(data['best_ratio'] or 0.0))
 
     messages.append(data['sparkline'])
     result = u'{}'.format('\n'.join(messages))
