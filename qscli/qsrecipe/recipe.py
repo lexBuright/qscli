@@ -365,4 +365,4 @@ def handle_command(app_data, options):
     elif options.command == 'show':
         return show(app_data, options.recipe, options.json)
     else:
-        return errors.NoCommand()
+        raise errors.NoCommand()
