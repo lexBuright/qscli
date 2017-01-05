@@ -31,6 +31,10 @@ def main():
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
 
+    for logger_name in args.hide_debug:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.CRITICAL)
+
     if args.action == 'versus-days':
         Data.set_versus_days_ago(args.days_ago)
     elif args.action == 'incr-versus-days':
@@ -131,6 +135,8 @@ def build_parser():
     parser = argparse.ArgumentParser(description='Keep track of exercise')
     parser.add_argument('--debug', action='store_true', help='Print debug output')
     sub = parser.add_subparsers(dest='action')
+
+    parser.add_argument('--hide-debug', type=str, action='append', help='Hide debug output for a system')
 
     gymtime.add_subparser(sub.add_parser('gymtime', help='Record the amount of time at the gym'))
 

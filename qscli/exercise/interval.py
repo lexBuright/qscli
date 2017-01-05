@@ -1,11 +1,14 @@
 import collections
 import itertools
 import json
+import logging
 import time
 
 from . import const, parsers
 from .. import guiutils
 from .data import SCORER, WATCH, Data
+
+LOGGER = logging.getLogger()
 
 PARAM_DIRECTIONS = ('incline', 'speed', 'active', 'rest', 'count')
 
