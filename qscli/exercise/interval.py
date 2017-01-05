@@ -21,6 +21,13 @@ def add_subparser(parser):
 
     start_parser = sub.add_parser('start')
     start_parser.add_argument(
+        '--warn-time',
+        type=float,
+        action='append',
+        metavar='SECONDS',
+        help='Show a warning SECONDS seconds before each active intervals')
+
+    start_parser.add_argument(
         '--show-period',
         type=float,
         help='Display every PERIOD seconds',
@@ -36,6 +43,12 @@ def add_subparser(parser):
         type=float,
         help='Display every PERIOD seconds while resting',
         metavar='PERIOD'
+        )
+
+    start_parser.add_argument(
+        '--restart',
+        action='store_true',
+        help='If the clock is already running restart it'
         )
     parsers.exercise_prompt(start_parser, required=False)
     settings_prompt(start_parser, False)
@@ -80,7 +93,15 @@ def run(args):
     elif args.interval_action == 'start':
         active_show_period = args.active_show_period if args.active_show_period is not None else args.show_period
         resting_show_period = args.resting_show_period if args.resting_show_period is not None else args.show_period
-        start(args.exercise, active_show_period, resting_show_period, args.active_time, args.rest_time)
+        start(
+            args.exercise,
+            active_show_period,
+            resting_show_period,
+            args.active_time,
+            args.rest_time,
+            args.warn_time,
+            args.restart
+            )
     elif args.interval_action == 'stop':
         stop()
     elif args.interval_action == 'stats':
@@ -230,7 +251,8 @@ def get_score_name():
 
     return 'exercise.score.interval.{}.speed:{}.incline:{}.active:{}.rest:{}'.format(exercise, speed_string, incline_string, int(active_period), int(rest_period))
 
-def start(exercise, active_show_period, resting_show_period, active_time, rest_time):
+def start(exercise, active_show_period, resting_show_period, active_time, rest_time, warn_times, restart):
+
     if exercise is not None:
         Data.set_interval_exercise(exercise)
 
@@ -242,12 +264,15 @@ def start(exercise, active_show_period, resting_show_period, active_time, rest_t
 
     exercise = Data.get_interval_exercise()
     active_time = active_time or Data.get_interval_active()
-    rest_period = rest_time or Data.get_interval_rest()
+    rest_time = rest_time or Data.get_interval_rest()
 
     data = json.loads(WATCH.get().run(['show', 'exercise.interval', '--json']))
     if data['running']:
-        print 'Already running\n\n'
-        return
+        if restart:
+            stop()
+        else:
+            print 'Already running\n\n'
+            return
     score_name = get_score_name()
 
     SCORER.get().run(['store', score_name, '0'])
@@ -274,11 +299,13 @@ def start(exercise, active_show_period, resting_show_period, active_time, rest_t
             break
 
         SCORER.get().run(['update', score_name, str(index)])
-        print 'rest from {} for {} seconds'.format(exercise, rest_period)
+        print 'rest from {} for {} seconds'.format(exercise, rest_time)
         print SCORER.get().run(['summary', score_name, '--update']).encode('utf8')
         print '\n\n'
 
-        for _ in loop_for(rest_period, resting_show_period):
+        rest_display_times = [max(rest_time - w, 0) for w in warn_times]
+
+        for _ in loop_for(rest_time, resting_show_period, loop_times=rest_display_times):
             if not data['running']:
                 break
 
@@ -287,17 +314,28 @@ def start(exercise, active_show_period, resting_show_period, active_time, rest_t
 
     print 'Finished'
 
-def loop_for(complete_period, loop_period):
+def loop_for(complete_period, loop_period, loop_times=None):
+    LOGGER.debug('Looping for %r s every %r s and at %r s', complete_period, loop_period, loop_times)
+
     start = time.time()
+    loop_times = loop_times or []
     while True:
         if time.time() - start > complete_period:
             break
         else:
-            if loop_period is None:
-                time.sleep(complete_period)
-            else:
-                sleep_period = max(min(start + complete_period, time.time() + loop_period) - time.time(), 0)
-                time.sleep(sleep_period)
+            expiries = [start + t for t in loop_times]
+            expiries.append(start + complete_period)
+            if loop_period:
+                expiries.append(time.time() + loop_period)
+
+            # There's a slight race here that could
+            # occassionaly cause us to drop expiries
+            next_expiry = min(expiry for expiry in expiries if expiry > time.time())
+
+            sleep_period = max(next_expiry - time.time(), 0)
+            LOGGER.debug('Next expiry: %r out of %r sleep for %r', next_expiry, expiries, sleep_period)
+            time.sleep(sleep_period)
+
         yield None
 
 def stop():
