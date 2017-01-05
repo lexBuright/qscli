@@ -1,0 +1,6 @@
+#!/bin/bash
+set -o errexit
+set -o nounset
+set -o pipefail
+
+jq '[.time, .estimate] | @csv ' -r | grep -v ',$' | tr ',' ' ' | pyline -N 'hstack((d[:,:1] - d[:,:1].min(), d[:,1:]))'
