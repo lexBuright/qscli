@@ -1,7 +1,9 @@
 import collections
+import datetime
 import itertools
 import json
 import logging
+import operator
 import time
 
 from . import const, parsers
@@ -14,6 +16,9 @@ PARAM_DIRECTIONS = ('incline', 'speed', 'active', 'rest', 'count')
 
 def add_subparser(parser):
     sub = parser.add_subparsers(dest='interval_action')
+
+    history_parser = sub.add_parser('history')
+    history_parser.add_argument('--exercise', '-x', type=str, help='Only show history of this exercise')
 
     new_endurance = sub.add_parser('new')
     parsers.exercise_prompt(new_endurance)
@@ -108,10 +113,22 @@ def run(args):
         stats()
     elif args.interval_action == 'graph':
         graph(args.exercise)
+    elif args.interval_action == 'history':
+        history(args.exercise)
     elif args.interval_action == 'frontier':
         frontier_run(args)
     else:
         raise ValueError(args.interval_action)
+
+    
+def history(exercise):
+    points = list(get_all_points(exercise))
+    print points[0]
+    for point in sorted(points, key=operator.attrgetter('time')):
+        isodate = datetime.datetime.fromtimestamp(point.time).isoformat()
+        print isodate, point.exercise, point.speed, point.incline, point.active, point.rest, point.count
+
+
 
 def frontier_run(args):
     if args.frontier_action == 'radiate':
@@ -136,7 +153,7 @@ def move_frontier(exercise, increase):
     def stupid_distance(p1, p2):
         return sum([abs(p1[k] - p2[k]) for k in p1.to_dict() if k != 'name'])
 
-    data = get_data_points(exercise)
+    data = get_best_points(exercise)
     if increase is not None:
         greater_values = [x for x in data[increase] if x > frontier_point[increase]]
         if greater_values:
@@ -187,33 +204,61 @@ def multi_argmax(columns, data):
 
 def radiate_frontier(exercise, direction):
     order = [direction] + [x for x in PARAM_DIRECTIONS if x != direction]
-    data = get_data_points(exercise)
+    data = get_best_points(exercise)
     point = multi_argmax(order, data)
     print point
     Data.set_interval_frontier_point(point.to_dict())
 
 
-DataPoint = collections.namedtuple('DataPoint', 'speed incline active rest count name')
+DataPoint = collections.namedtuple('DataPoint', 'speed incline active rest count name exercise time')
 
-def parse_score(score_name, value):
-    _literal_exercise, _score, _interval, _exercise, speed_string, incline_string, active_string, rest_string = score_name.split('.')
+def parse_score(score_name, record):
+    value = record['value']
+    print 'record', record
+
+    _literal_exercise, _score, _interval, exercise, speed_string, incline_string, active_string, rest_string = score_name.split('.')
     speed = float(speed_string.split(':')[1].replace(',', '.'))
     incline = float(incline_string.split(':')[1].replace(',', '.'))
     active = int(active_string.split(':')[1])
     rest = int(rest_string.split(':')[1])
-    return DataPoint(speed=speed, incline=incline, active=active, rest=rest, count=float(value), name=str(speed))
+    return DataPoint(
+        speed=speed,
+        incline=incline,
+        active=active,
+        rest=rest,
+        count=float(value),
+        name=str(speed),
+        exercise=exercise,
+        time=record['time']
+        )
 
 
-def get_data_points(exercise):
+def _scorer_regex(exercise):
+    if exercise is not None:
+        return '^exercise.score.interval.{}.'.format(exercise)
+    else:
+        return '^exercise.score.interval'.format(exercise)
+
+
+
+def get_best_points(exercise=None):
     import pandas
 
     df = pandas.DataFrame(columns=DataPoint._fields)
-    data = json.loads(SCORER.get().run(['records', '--json', '--regex', '^exercise.score.interval.{}.'.format(exercise)]))
+
+    regex = _scorer_regex(exercise)
+    data = json.loads(SCORER.get().run(['records', '--json', '--regex', regex]))
     for index, (score_name, record) in enumerate(data['records'].items()):
-        point = parse_score(score_name, record['value'])
+        point = parse_score(score_name, record)
         df.loc[index] = point
 
     return df
+
+def get_all_points(exercise=None):
+    regex = _scorer_regex(exercise)
+    data = json.loads(SCORER.get().run(['log', '--json', '--regex', regex]))
+    for record in data:
+        yield parse_score(record['metric'], record)
 
 def plot_graph(exercise, points):
     from pandas.tools.plotting import parallel_coordinates # pandas is big
@@ -222,7 +267,7 @@ def plot_graph(exercise, points):
     pylab.show()
 
 def graph(exercise):
-    points = get_data_points(exercise)
+    points = get_best_points(exercise)
     plot_graph(exercise, points)
 
 
