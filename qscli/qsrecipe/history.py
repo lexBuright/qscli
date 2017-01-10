@@ -23,6 +23,7 @@ def show_history(app_data, is_json):
     json_entries = []
     for name, playback_data in sorted_past_playbacks(app_data):
         start_time = playback_data['start']
+        start_date = datetime.datetime.fromtimestamp(start_time).isoformat()
 
         if playback_data['steps']:
             last_step = playback_data['steps'][-1]
@@ -35,7 +36,15 @@ def show_history(app_data, is_json):
         short_content_id = long_content_id[:10]
         recipe_name = playback_data['recipe_name']
         result.append('{} {} {}'.format(name, recipe_name, short_content_id))
-        json_entries.append(dict(name=name, recipe_name=recipe_name, content_id=long_content_id, start_time=start_time, ended_time=end_time, duration=duration))
+        json_entries.append(dict(
+            name=name,
+            recipe_name=recipe_name,
+            content_id=long_content_id,
+            start_time=start_time,
+            ended_time=end_time,
+            duration=duration,
+            date=start_date,
+            ))
     if is_json:
         print json.dumps(dict(result=json_entries))
     else:
