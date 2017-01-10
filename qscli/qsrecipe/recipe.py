@@ -96,7 +96,6 @@ def move(app_data, recipe_name, old_index, new_index):
 
         recipe['steps'] = new_steps
 
-
 def update_step(step):
     "Bring step uptodate"
     step.setdefault('commands', [])

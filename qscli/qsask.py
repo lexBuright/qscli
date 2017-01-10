@@ -73,6 +73,11 @@ delete_parser.add_argument('name', type=str)
 ask_parser = parsers.add_parser('ask', help='Force the asking of question (risks selection bias)')
 ask_parser.add_argument('name', type=str)
 
+disable = parsers.add_parser('disable', help='Disable the asking of questions for a period of time')
+disable.add_argument('seconds', type=int)
+
+parsers.add_parser('enable', help='Remove disables')
+
 LOGGER = logging.getLogger()
 
 def main():
@@ -143,11 +148,24 @@ def run(args):
             return list_questions(data, options.type, options.json)
         elif options.command == 'delete':
             return delete_question(data, options.name)
+        elif options.command == 'disable':
+            return disable_all_questions(data, options.seconds)
+        elif options.command == 'enable':
+            return enable_all_questions(data)
         else:
             raise ValueError(options.command)
 
 def init_data(data):
     data.setdefault('questions', dict())
+
+def disable_all_questions(data, seconds):
+    expires = time.time() +  seconds
+    data['disable_expires'] = max(data.get('disable_expires', 0), expires)
+    data.setdefault('disabled_period', []).append((time.time(), expires))
+
+def enable_all_questions(data):
+    data['disable_expires'] = time.time()
+    data.setdefault('reenabled_at', []).append(time.time())
 
 def show_question(data, name):
     question = data['questions'][name]
@@ -228,27 +246,32 @@ def run_daemon(data_dir, data_file, multiplier, questions):
         LOGGER.debug('Polling')
         with with_data(data_file) as data:
             init_data(data)
-            data.setdefault('questions', {})
 
-            unknown_questions = set(questions) - set(data['questions']) if questions is not None else None
+            if time.time() < data.get('disable_expires', 0):
+                LOGGER.debug('Disabled until %.1f (%.1f seconds)', data['disable_expires'], data['disable_expires'] - time.time())
+            else:
+                data.setdefault('questions', {})
 
-            if unknown_questions:
-                raise Exception('Question filter contains unknown questions %r', list(questions))
+                unknown_questions = set(questions) - set(data['questions']) if questions is not None else None
 
-            if not data['questions']:
-                LOGGER.debug('No questions to think about asking')
+                if unknown_questions:
+                    raise Exception('Question filter contains unknown questions %r', list(questions))
 
-            for name, question in data['questions'].items():
-                if questions is not None and name not in questions:
-                    continue
+                if not data['questions']:
+                    LOGGER.debug('No questions to think about asking')
 
-                # Hooray for memorilessness
-                ask_prob = calculate_ask_prob(question['period'], period)
+                for name, question in data['questions'].items():
+                    if questions is not None and name not in questions:
+                        continue
 
-                LOGGER.debug('Probability of asking %s: %s', name, ask_prob)
-                if random.random() < ask_prob:
-                    LOGGER.debug('Asking %s', name)
-                    ask_and_store(data_dir, data, name)
+                    # Hooray for memorilessness
+                    ask_prob = calculate_ask_prob(question['period'], period)
+
+                    LOGGER.debug('Probability of asking %s: %s', name, ask_prob)
+                    if random.random() < ask_prob:
+                        LOGGER.debug('Asking %s', name)
+                        ask_and_store(data_dir, data, name)
+
 
         time.sleep(period / multiplier)
 
