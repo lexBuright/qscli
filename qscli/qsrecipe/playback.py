@@ -23,6 +23,7 @@ class Player(object):
 
     @staticmethod
     def _initialize_step(index, next_step, recipe):
+        next_step['finished_early'] = False
         next_step['skipped'] = False
         next_step['index'] = index
         next_step['abandoned_at'] = None
@@ -42,8 +43,8 @@ class Player(object):
                 step_start = ex.end_time + step_duration
             except AbandonRecipe:
                 return True
-            except (SkippedStep, AbandonedStep) as ex:
-                LOGGER.debug('Step skipped or abanadoned %r', ex)
+            except (SkippedStep, FinishedStep, AbandonedStep) as ex:
+                LOGGER.debug('Step skipped, abanadoned or finished %r', ex)
                 return False
             else:
                 LOGGER.debug('Next step reached')
@@ -70,6 +71,8 @@ class Player(object):
                     print format_step(self._name, current_step)
                 step_duration = next_step['duration']
                 del next_step
+
+            self._finish_current_step()
 
             with data.with_data(self._data_path) as app_data:
                 stop(app_data, self._name, False)
@@ -102,7 +105,7 @@ class Player(object):
             playback_data['step'].setdefault('format_command', [])
             yield playback_data['step']
 
-    def record_step(self, step, duration=None, skipped=None):
+    def record_step(self, step, duration=None, skipped=None, finished_early=None):
         with self.with_playback_data() as playback_data:
             stored_step = step.copy()
             stored_step['started_at'] = time.time()
@@ -110,6 +113,8 @@ class Player(object):
                 stored_step['duration'] = duration
             if skipped is not None:
                 stored_step['skipped'] = skipped
+            if finished_early is not None:
+                stored_step['finished_early'] = finished_early
             playback_data['step'] = stored_step
 
     def next_step(self, next_step):
@@ -156,6 +161,8 @@ class Player(object):
                     playback_data = app_data['playbacks'][self._name]
                     if playback_data['step']['skipped']:
                         raise SkippedStep()
+                    if playback_data['step']['finished_early']:
+                        raise FinishedStep()
                     elif playback_data['step']['abandoned_at'] is not None:
                         raise AbandonedStep()
                     elif playback_data['step']['delays']:
@@ -163,7 +170,9 @@ class Player(object):
                         if delay != self._current_delay:
                             self._current_delay = delay
                             raise DelayedStep(delay['end_time'])
+        self._finish_current_step()
 
+    def _finish_current_step(self):
         with self.with_playback_data() as playback_data:
             if playback_data['step'] is not None:
                 playback_data['step']['finished'] = True
@@ -171,8 +180,11 @@ class Player(object):
 class SkippedStep(Exception):
     "Current step was skipped"
 
+class FinishedStep(Exception):
+    "Current step is finished"
+
 class DelayedStep(Exception):
-    "Current step was skipped"
+    "Delay the start of this step for a while"
     def __init__(self, end_time):
         self.end_time = end_time
 
@@ -234,6 +246,11 @@ def skip_step(app_data, playback):
 def abandon_step(app_data, playback):
     playback_data = app_data['playbacks'][playback]
     playback_data['step']['abandoned_at'] = time.time()
+
+def finish_step(app_data, playback):
+    playback_data = app_data['playbacks'][playback]
+    playback_data['step']['finished_early'] = True
+    playback_data['step']['finished_at'] = time.time()
 
 def delay_step(app_data, playback, seconds, reason):
     playback_data = app_data['playbacks'][playback]

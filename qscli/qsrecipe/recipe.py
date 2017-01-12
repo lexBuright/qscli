@@ -68,7 +68,6 @@ def add(app_data, recipe_name, step, start_time, index, duration, step_commands,
 def sort_steps(recipe):
     recipe['steps'].sort(key=lambda s: s['start_offset'])
 
-
 def diff(l):
     return [b - a for a, b in zip(l, l[1:])]
 
@@ -172,7 +171,6 @@ def delete_step(app_data, recipe_name, index):
         for step in recipe['steps'][index:]:
             shift = shift if shift is not None else deleted_step_offset - step['start_offset']
             step['start_offset'] -= shift
-
 
 def show(app_data, recipe_name, is_json):
     with data.read_recipe(app_data, recipe_name) as recipe:

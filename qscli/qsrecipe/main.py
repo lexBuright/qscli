@@ -89,6 +89,9 @@ def build_parser():
     skip_parser = parsers.add_parser('skip', help='Skip the current activity in a playback (not started)')
     skip_parser.add_argument('playback', type=str)
 
+    finish_parser = parsers.add_parser('finish', help='Finish the current step early')
+    finish_parser.add_argument('playback', type=str)
+
     recipe.add_options(parsers)
     return parser
 
@@ -135,6 +138,8 @@ def run(args):
             return playback.stop(app_data, options.playback)
         elif options.command == 'skip':
             playback.skip_step(app_data, options.playback)
+        elif options.command == 'finish':
+            playback.finish_step(app_data, options.playback)
         elif options.command == 'delay':
             playback.delay_step(app_data, options.playback, options.seconds, options.reason)
         elif options.command == 'abandon':

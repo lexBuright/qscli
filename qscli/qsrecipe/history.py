@@ -73,6 +73,10 @@ def display_step(step):
 
     if step['skipped']:
         print '   ', step['text'], 'SKIPPED'
+    elif step.get('finished_at') is not None and step['finished_early']:
+        completed_time = step['finished_at'] - step['started_at']
+        time_taken = step['finished_at'] - step['started_at']
+        print '   ', step['text'], 'FINISHED', '{:.0f}s'.format(time_taken)
     elif step['abandoned_at'] is not None:
         completed_time = step['abandoned_at'] - step['started_at']
         percent_completed = step['duration'] and completed_time / step['duration'] * 100
