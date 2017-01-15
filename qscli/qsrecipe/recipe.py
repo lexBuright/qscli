@@ -177,11 +177,12 @@ def show(app_data, recipe_name, is_json):
         map(update_step, recipe['steps'])
         if is_json:
             result = dict(steps=[])
-            for step in recipe['steps']:
+            for index, step in enumerate(recipe['steps']):
                 step.setdefault('format_command', None)
                 # Add an indirection layer between
                 #   external and internal format
                 result['steps'].append(dict(
+                    index=index,
                     format_command=step['format_command'],
                     commands=step['commands'],
                     text=step['text'],
