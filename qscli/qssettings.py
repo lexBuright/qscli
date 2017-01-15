@@ -88,8 +88,9 @@ class ValueStore(object):
                 'show',
                 '--series', self._prefix + name,
                 '--json']))
-        data.sort(key=lambda x: x['id'])
+        data.sort(key=lambda x: x['time'])
 
+        LOGGER.debug('Values %r', data)
         if data:
             return data[-1]['value']
         else:
