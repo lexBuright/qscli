@@ -41,7 +41,7 @@ update_parser = parsers.add_parser('update', help='Update a setting')
 name_setting(update_parser)
 value_setting(update_parser)
 
-delete_parser = pa.add_parser('delete', help='Delete a setting')
+delete_parser = parsers.add_parser('delete', help='Delete a setting')
 name_setting(delete_parser)
 
 timeseries_parser = parsers.add_parser('timeseries', help='Update a setting')
