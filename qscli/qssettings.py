@@ -41,6 +41,9 @@ update_parser = parsers.add_parser('update', help='Update a setting')
 name_setting(update_parser)
 value_setting(update_parser)
 
+delete_parser = pa.add_parser('delete', help='Delete a setting')
+name_setting(delete_parser)
+
 timeseries_parser = parsers.add_parser('timeseries', help='Update a setting')
 timeseries_parser.add_argument('arguments', nargs='*', help='Arguments to pass to timeseries')
 
@@ -64,6 +67,8 @@ def run(prompter, args):
         return show_setting(store, prompter, args.name)
     elif args.action == 'update':
         return update_setting(store, prompter, args.name, args.value)
+    elif args.action == 'delete':
+        return delete_setting(store, prompt, args.name)
     elif args.action == 'timeseries':
         return shell_collect(['qstimeseries', '--config-dir', args.config_dir] + args.arguments)
     else:
@@ -89,6 +94,9 @@ class ValueStore(object):
             return data[-1]['value']
         else:
             raise IndexError
+
+    def delete(self, name):
+        self.timeseries(['show', '--series', name, '--delete'])
 
     def get_setting_names(self):
         result = json.loads(self.timeseries(['series', '--json']))
@@ -134,6 +142,12 @@ def update_setting(store, prompter, name, value):
         value = prompt_for_value(prompter, store, default=old)
 
     store.update(name, value)
+
+def delete_setting(store, prompter, name):
+    if name == PROMPT:
+        name = prompt_for_name(prompter, store)
+
+    store.delete(name)
 
 def shell_collect(command):
 	process = subprocess.Popen(command, stdout=subprocess.PIPE)
