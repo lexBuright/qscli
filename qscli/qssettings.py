@@ -116,7 +116,10 @@ class ValueStore(object):
         return shell_collect(['qstimeseries', '--config-dir', self._config_dir] + command)
 
 def list_settings(store):
-    return '\n'.join(store.get_setting_names())
+    result = []
+    for name in store.get_setting_names():
+        result.append('{} {}'.format(name, store.get_current(name)))
+    return '\n'.join(result)
 
 def show_setting(store, prompter, name):
     if name == PROMPT:
