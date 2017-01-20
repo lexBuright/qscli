@@ -98,7 +98,7 @@ def ensure_config(config_dir):
 
 def playing(app_data):
     "Recipes that are currently playing"
-    for name in app_data['playbacks']:
+    for name in sorted(app_data['playbacks']):
         print name
 
 def run(args):
