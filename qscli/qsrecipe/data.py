@@ -3,8 +3,11 @@ import hashlib
 import json
 import os
 import threading
+import logging
 
 import fasteners
+
+LOGGER = logging.getLogger('data')
 
 def step_duration(recipe, index):
     "Calculate how long a step lasts in a recipe"
@@ -47,6 +50,8 @@ def with_recipe(app_data, recipe_name):
     recipe.setdefault('steps', [])
     yield recipe
     recipe['content_id'] = recipe_content_id(recipe)
+    LOGGER.debug('Saving recipe with content id: %r', recipe['content_id'])
+    app_data['all_recipes'][recipe['content_id']] = recipe
 
 @contextlib.contextmanager
 def read_recipe(app_data, recipe_name):
@@ -58,7 +63,8 @@ def read_recipe(app_data, recipe_name):
         yield recipe
     else:
         recipe_name, = [x for x in all_recipes if x.startswith(recipe_name)]
-        yield all_recipes[recipe_name]
+        result = all_recipes[recipe_name]
+        yield result
 
 def recipe_content_id(recipe):
     "Content addressable id for a recipe... because everythign must be git"

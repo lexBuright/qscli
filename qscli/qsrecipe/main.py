@@ -44,9 +44,6 @@ def build_parser():
     stop_parser.add_argument('playback', type=str, help='Playback that you want to stop')
 
     parsers.add_parser('test', help='Run the tests')
-    show_parser = parsers.add_parser('show', help='Show a recipe')
-    show_parser.add_argument('recipe', type=str)
-    show_parser.add_argument('--json', action='store_true', help='Output data as machine-readable json')
 
     parsers.add_parser('playing', help='List historic playbacks')
 

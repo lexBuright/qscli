@@ -94,7 +94,7 @@ class ValueStore(object):
         if data:
             return data[-1]['value']
         else:
-            raise IndexError
+            raise IndexError(name)
 
     def delete(self, name):
         self.timeseries(['show', '--series', name, '--delete'])

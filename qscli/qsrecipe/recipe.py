@@ -9,16 +9,20 @@ from . import data
 from . import errors
 from ..symbol import Symbol
 
-DELETE = Symbol('Delete')
-SPLIT = Symbol('Split')
-LOGGER = logging.getLogger('qsrecipe.recipe')
-
 UNIT_PERIODS = {
     's': datetime.timedelta(seconds=1),
     'm': datetime.timedelta(seconds=60),
     'h': datetime.timedelta(seconds=3600),
     'd': datetime.timedelta(days=1),
 }
+
+DELETE = Symbol('Delete')
+SPLIT = Symbol('Split')
+LOGGER = logging.getLogger('qsrecipe.recipe')
+
+class PlayingRecipe(object):
+    def __init__(self, index=None):
+        self.index = index
 
 def list_recipes(app_data, anon):
     result = []
@@ -30,7 +34,27 @@ def list_recipes(app_data, anon):
 
     return '\n'.join(result)
 
+def fetch_recipe_name(app_data, recipe_name, editable):
+    if isinstance(recipe_name, PlayingRecipe):
+        if recipe_name.index is None:
+            play_name, play_data = sorted(app_data['playbacks'].items())[0]
+            name = play_data['recipe_name']
+            content_id = play_data['recipe']['content_id']
+
+            if editable:
+                result = name
+            else:
+                result = content_id
+            LOGGER.debug('Operating on recipe for current playback(%r): %r', play_name, name)
+            return result
+        else:
+            return sorted(app_data['playbacks'].items())[recipe_name.index + 1][1]['content_id']
+    else:
+        return recipe_name
+
+
 def add(app_data, recipe_name, step, start_time, index, duration, step_commands, format_command):
+    recipe_name = fetch_recipe_name(app_data, recipe_name, True)
     with data.with_recipe(app_data, recipe_name) as recipe:
         if not recipe['steps']:
             last_step_time = 0
@@ -72,9 +96,9 @@ def diff(l):
     return [b - a for a, b in zip(l, l[1:])]
 
 def move(app_data, recipe_name, old_index, new_index):
-    literal_new_index = new_index.get_index(old_index)
-
     with data.with_recipe(app_data, recipe_name) as recipe:
+        literal_new_index = new_index.get_index(old_index)
+        recipe_name = fetch_recipe_name(app_data, recipe_name, True)
 
         # There are two spaces: duration space
         #  and absolute offset space. This task is
@@ -104,14 +128,15 @@ def find_step(recipe, index):
 
 def edit(
         app_data, recipe_name,
-        index=None, text=None, before=None, after=None, exact_time=None,
+        index=None, text=None, before=None, duration=None, exact_time=None,
         add_command=None, delete_command_index=None, clear_commands=None,
         format_command=None
         ):
     if exact_time:
-        if (before is not None or after is not None) and exact_time is not None:
-            raise Exception('exact_time cannot be used with either before or after')
+        if (before is not None or duration is not None) and exact_time is not None:
+            raise Exception('exact_time cannot be used with either before or duration')
 
+    recipe_name = fetch_recipe_name(app_data, recipe_name, True)
     with data.with_recipe(app_data, recipe_name) as recipe:
         step = find_step(recipe, index=index)
         update_step(step)
@@ -131,8 +156,8 @@ def edit(
             for step in recipe['steps'][index:]:
                 step['start_offset'] += shift
 
-        if after is not None:
-            shift = after - data.step_duration(recipe, index)
+        if duration is not None:
+            shift = duration - data.step_duration(recipe, index)
             LOGGER.debug('Shifting after by %r', shift)
             for step in recipe['steps'][index + 1:]:
                 step['start_offset'] += shift
@@ -154,12 +179,14 @@ def edit(
             step['commands'] = []
 
         sort_steps(recipe)
+        recipe['parent_id'] = recipe['content_id']
 
 def delete_recipes(app_data, recipes):
     for recipe in recipes:
         app_data.get('recipes', {}).pop(recipe)
 
 def delete_step(app_data, recipe_name, index):
+    recipe_name = fetch_recipe_name(app_data, recipe_name, True)
     if index is None:
         # We might later support different search criteria
         raise Exception('Must specify and index')
@@ -173,6 +200,7 @@ def delete_step(app_data, recipe_name, index):
             step['start_offset'] -= shift
 
 def show(app_data, recipe_name, is_json):
+    recipe_name = fetch_recipe_name(app_data, recipe_name, False)
     with data.read_recipe(app_data, recipe_name) as recipe:
         map(update_step, recipe['steps'])
         if is_json:
@@ -198,8 +226,8 @@ def show(app_data, recipe_name, is_json):
                     duration = '0s'
                 result.append((format_seconds(step['start_offset']), duration, step['text'], step['commands']))
 
-            time_column_width = max(len(r[0]) for r in result) + 2
-            duration_column_width = max(len(r[1]) for r in result) + 2
+            time_column_width = max(len(r[0]) for r in result) + 2 if result else 0
+            duration_column_width = max(len(r[1]) for r in result) + 2 if result else 0
             output = []
             for index, (time_string, duration_string, text, commands) in enumerate(result):
                 time_string += ' ' * (time_column_width - len(time_string))
@@ -222,6 +250,19 @@ def format_seconds(seconds):
         result = '{}h {}'.format(hours, result)
     return result
 
+def parse_special_recipes(string):
+    number_dot = re.search(r'\.([0-9])+', string)
+
+    if string == '.':
+        return PlayingRecipe()
+    elif number_dot:
+        return PlayingRecipe(int(number_dot.group(1)))
+    else:
+        return string
+
+def recipe_option(parser):
+    parser.add_argument('recipe', type=parse_special_recipes, help='Recipe to operate on')
+
 def add_options(parsers):
     "Add those options for handling recipes to the main parser"
 
@@ -229,17 +270,22 @@ def add_options(parsers):
         parser.add_argument('--format-command', type=parse_command, help='Run this command to produce the text output', dest='format_command')
         parser.add_argument('--clear-format-command', action='store_const', help='Clear the format command', dest='format_command', const=DELETE)
 
+    show_parser = parsers.add_parser('show', help='Show a recipe')
+    recipe_option(show_parser)
+    show_parser.add_argument('--json', action='store_true', help='Output data as machine-readable json')
+
     move_parser = parsers.add_parser('move', help='Move a step while keeping all durations the same')
-    move_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
+    recipe_option(move_parser)
     move_parser.add_argument('old_index', type=int, help='Step to move')
     move_parser.add_argument('new_index',
         type=IntegerCoord.parse,
         help='Index to which the step should be moved. Relative motions can be specified like +1 or -1')
 
     edit_parser = parsers.add_parser('edit', help='Edit an action in a recipe')
-    edit_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
+    recipe_option(edit_parser)
     edit_parser.add_argument('--index', '-i', type=int, help='Operate on the action with this index')
-    edit_parser.add_argument('--after', '-a', type=parse_absolute_time, help='Time after this event before next action')
+
+    edit_parser.add_argument('--duration', '-d', type=parse_absolute_time, help='How long this event should last')
     edit_parser.add_argument('--before', '-b', type=parse_absolute_time, help='Time before this event before next action')
     edit_parser.add_argument('--text', '-n', type=str, help='Change the text of this step')
     edit_parser.add_argument('--exact', '-x', type=parse_absolute_time, help='Exact time into the recipe for this step')
@@ -249,18 +295,18 @@ def add_options(parsers):
     edit_commands.add_argument('--delete-command', metavar='INDEX', type=int, help='Delete a command at an index')
     format_command(edit_commands)
 
-    list_parser = parsers.add_parser('list', help='Add an action to a recipe')
+    list_parser = parsers.add_parser('list', help='List recipes')
     list_parser.add_argument('--anon', '-a', action='store_true', help='Include anonymous recipes (old recipes)')
 
     delete_parser = parsers.add_parser('delete', help='Delete a recipes')
     delete_parser.add_argument('recipes', type=str, nargs='*')
 
     delete_step_parser = parsers.add_parser('delete-step', help='Delete a step in a recipe')
-    delete_step_parser.add_argument('recipe', type=str)
+    recipe_option(delete_step_parser)
     delete_step_parser.add_argument('--index', type=int, help='Index of step to delete')
 
     add_parser = parsers.add_parser('add', help='Add an action to a recipe')
-    add_parser.add_argument('recipe', type=str, help='Recipe to add a step to')
+    recipe_option(add_parser)
     add_parser.add_argument('step', type=str, help='Recipe step')
     add_parser.add_argument('--time', type=parse_time, help='Time delay before this step')
     add_parser.add_argument('--index', type=int, help='Insert at this index. By default insert', default=None)
@@ -345,7 +391,7 @@ def handle_command(app_data, options):
         return edit(
             app_data, options.recipe,
             index=options.index,
-            after=options.after,
+            duration=options.duration,
             before=options.before,
             text=options.text,
             exact_time=options.exact,
