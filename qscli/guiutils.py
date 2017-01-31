@@ -61,3 +61,7 @@ def run_in_window(command):
                 return result
             else:
                 time.sleep(0.2)
+
+def confirmation_box(prompt):
+    "Prompt and require action to confirm that it has been read"
+    subprocess.check_call(['zenity', '--info', '--text', prompt])

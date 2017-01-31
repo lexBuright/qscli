@@ -46,6 +46,11 @@ def new_or_edit(parser, name):
     new.add_argument('--type', type=str, choices=(STRING, FLOAT), help='The type of answer to record')
     new.add_argument('--prompt', type=str, help='Prompt message')
     new.add_argument('--if-command', type=space_dsv, help='Only ask if this command succeeds')
+    new.add_argument(
+        '--warning-period',
+        metavar='PERIOD',
+        type=float,
+        help='Warn about the upcoming question PERIOD seconds before asking')
 
 new_or_edit(PARSER, 'new')
 new_or_edit(PARSER, 'edit')
@@ -62,6 +67,7 @@ daemon = parsers.add_parser('daemon', help='Process that asks questions')
 daemon.add_argument('--dry-run', '-n', action='store_true', help='Print out actions rather than carrying them out')
 daemon.add_argument('--multiplier', '-m', type=float, help='Ask questions more quickly', default=1.0)
 daemon.add_argument('--questions', '-q', type=parse_csv, help='Csv of questions you want to ask')
+daemon.add_argument('--exit-after', '-X', type=float, help='Only run for this many seconds (useful for debug)')
 
 list_parser = parsers.add_parser('list', help='List the questions')
 list_parser.add_argument('--type', '-t', choices=TYPES, help='Only display questions of this type')
@@ -128,14 +134,21 @@ def run(args):
     data_file = os.path.join(options.config_dir, 'data.json')
     LOGGER.debug('Question file %r', data_file)
     if options.command == 'daemon':
-        return run_daemon(options.config_dir, data_file, options.multiplier, options.questions)
+        return run_daemon(options.config_dir, data_file, options.multiplier, options.questions, options.exit_after)
 
     with with_data(data_file) as data:
         init_data(data)
         if options.command in ('new', 'edit'):
             if options.command == 'new':
                 verify_new(data, options.name)
-            return edit_question(data, options.name, period=options.period, prompt=options.prompt, type=options.type, if_command=options.if_command)
+            return edit_question(
+                data,
+                options.name,
+                period=options.period,
+                prompt=options.prompt,
+                type=options.type,
+                if_command=options.if_command,
+                warning_period=options.warning_period)
         elif options.command == 'ask':
             ask_and_store(options.config_dir, data, options.name)
         elif options.command == 'show':
@@ -174,6 +187,9 @@ def show_question(data, name):
     result.append('Period: {}'.format(question['period']))
     result.append('Type: {}'.format(question['type']))
 
+    if question['warning_period'] is not None:
+        result.append('Warn period: {}'.format(question['warning_period']))
+
     if result:
         return '\n'.join(result) + '\n'
 
@@ -181,7 +197,15 @@ def verify_new(data, name):
     if name in data['questions']:
         raise Exception('Already a question {!r}'.format(name))
 
-def edit_question(data, name, period, prompt, type, choices=None, if_command=None):
+def edit_question(
+        data,
+        name,
+        period,
+        prompt,
+        type,
+        choices=None,
+        if_command=None,
+        warning_period=None):
     data['questions'].setdefault(name, {})
     question = data['questions'][name]
 
@@ -195,6 +219,9 @@ def edit_question(data, name, period, prompt, type, choices=None, if_command=Non
         question['type'] = STRING
     if 'if_command' not in question:
         question['if_command'] = None
+    if 'warning_period' not in question:
+        question['warning_period'] = None
+
 
     if period is not None:
         question['period'] = period
@@ -207,6 +234,10 @@ def edit_question(data, name, period, prompt, type, choices=None, if_command=Non
         question['type'] = type
     if if_command is not None:
         question['if_command'] = if_command
+    if warning_period is not None:
+        if warning_period <= 0:
+            raise Exception('Warn period must be positive ({!r})'.format(warning_period))
+        question['warning_period'] = warning_period
 
 def list_questions(data, question_type, is_json):
     json_result = []
@@ -240,12 +271,17 @@ def calculate_ask_prob(question_period, poll_period):
 
     return float(poll_period) / float(question_period)
 
-def run_daemon(data_dir, data_file, multiplier, questions):
+def run_daemon(data_dir, data_file, multiplier, questions, exit_after):
     period = 1
+    start = time.time()
     while True:
         LOGGER.debug('Polling')
         with with_data(data_file) as data:
             init_data(data)
+
+            if exit_after is not None and time.time() > start + exit_after:
+                LOGGER.debug('Run for long enough: quitting')
+                return
 
             if time.time() < data.get('disable_expires', 0):
                 LOGGER.debug('Disabled until %.1f (%.1f seconds)', data['disable_expires'], data['disable_expires'] - time.time())
@@ -298,6 +334,10 @@ def ask_and_store(data_dir, data, name):
 
 
 def ask_question(question):
+    if question['warning_period']:
+        guiutils.confirmation_box('Going to ask: {}'.format(question['prompt']))
+        time.sleep(question['warning_period'])
+
     if question['type'] == STRING:
         return guiutils.str_prompt(question['prompt'])
     elif question['type'] == FLOAT:

@@ -58,3 +58,9 @@ python setup.py test
 ```
 
 You might prefer to use a virtualenv.
+
+# Manual tests
+
+For certain gui-heavy or otherwise difficult to test features
+manual tests that exercise code, but don't test anything
+are provided in `manual_tests`
