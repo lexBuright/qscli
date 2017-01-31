@@ -141,6 +141,8 @@ def run(args):
         if options.command in ('new', 'edit'):
             if options.command == 'new':
                 verify_new(data, options.name)
+            elif options.command == 'edit':
+                verify_exists(data, options.name)
             return edit_question(
                 data,
                 options.name,
@@ -196,6 +198,10 @@ def show_question(data, name):
 def verify_new(data, name):
     if name in data['questions']:
         raise Exception('Already a question {!r}'.format(name))
+
+def verify_exists(data, name):
+    if name not in data['questions']:
+        raise Exception('No such question {!r}'.format(name))
 
 def edit_question(
         data,
