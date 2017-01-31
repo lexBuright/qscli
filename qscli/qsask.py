@@ -246,8 +246,10 @@ def list_questions(data, question_type, is_json):
         if question_type is not None and question['type'] != question_type:
             continue
 
+        question.setdefault('warning_period', None)
+
         json_result.append(
-            dict(name=name, period=question['period'])
+            dict(name=name, period=question['period'], warning_period=question['warning_period'])
             )
     if not is_json:
         if json_result:
