@@ -46,6 +46,7 @@ def read_json(filename):
 @contextlib.contextmanager
 def with_recipe(app_data, recipe_name):
     recipes = app_data.setdefault('recipes', {})
+    app_data.setdefault('all_recipes', {})
     recipe = recipes.setdefault(recipe_name, {})
     recipe.setdefault('steps', [])
     yield recipe

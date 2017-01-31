@@ -44,7 +44,7 @@ class TestRecipes(unittest.TestCase):
         self.run_cli(['add', 'recipe1', 'Step2', '--time', '+10s'])
         self.run_cli(['add', 'recipe1', 'Step3', '--time', '+10s'])
 
-        self.run_cli(['edit', 'recipe1', '--index', '1', '--before', '5s', '--after', '15s', '--text', 'Step two'])
+        self.run_cli(['edit', 'recipe1', '--index', '1', '--before', '5s', '--duration', '15s', '--text', 'Step two'])
 
         recipe = json.loads(self.run_cli(['show', 'recipe1', '--json']))
         self.assertEquals(recipe['steps'][1]['start_offset'], 5)
