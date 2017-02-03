@@ -26,6 +26,9 @@ def name_setting(parser):
 def value_setting(parser):
     parser.add_argument('--value', '-v', default=PROMPT)
 
+def json_option(parser):
+    parser.add_argument('--json', action='store_true', help='Output in machine readable json')
+
 DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qssettings')
 
 PARSER = argparse.ArgumentParser(description='Store and update settings')
@@ -34,7 +37,8 @@ PARSER.add_argument('--prefix', '-P', help='Prefix for settings in qstimeseries'
 PARSER.add_argument('--debug', action='store_true', help='Print debug output')
 
 parsers = PARSER.add_subparsers(dest='action')
-show_parser = parsers.add_parser('list', help='List all settings')
+list_parser = parsers.add_parser('list', help='List all settings')
+json_option(list_parser)
 show_parser = parsers.add_parser('show', help='Show a setting')
 name_setting(show_parser)
 update_parser = parsers.add_parser('update', help='Update a setting')
@@ -62,7 +66,7 @@ def run(prompter, args):
         logging.basicConfig(level=logging.DEBUG)
 
     if args.action == 'list':
-        return list_settings(store)
+        return list_settings(store, args.json)
     elif args.action == 'show':
         return show_setting(store, prompter, args.name)
     elif args.action == 'update':
@@ -115,11 +119,15 @@ class ValueStore(object):
     def timeseries(self, command):
         return shell_collect(['qstimeseries', '--config-dir', self._config_dir] + command)
 
-def list_settings(store):
-    result = []
+def list_settings(store, is_json):
+    json_result = []
     for name in store.get_setting_names():
-        result.append('{} {}'.format(name, store.get_current(name)))
-    return '\n'.join(result)
+        json_result.append(dict(name=name, current=store.get_current(name)))
+
+    if is_json:
+        return json.dumps(json_result)
+    else:
+        return "\n".join('{} {}'.format(d['name'], d['current']) for d in json_result)
 
 def show_setting(store, prompter, name):
     if name == PROMPT:
