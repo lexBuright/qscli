@@ -132,6 +132,10 @@ def show(db, series, ids, json_output, indexes=None):
             result.append(dict(time=unix_time, series=series, id=ident, value=value))
         return json.dumps(result),
 
+
+def json_option(parser):
+    parser.add_argument('--json', action='store_true', help='Output in machine readable json')
+
 def build_parser():
     parser = argparse.ArgumentParser(description='Very simple command line timeseries')
     parser.add_argument('--debug', action='store_true', help='Include debug output (to stderr)')
@@ -150,7 +154,7 @@ def build_parser():
     series_command = parsers.add_parser('series', help='List the series')
     series_command.add_argument('--quiet', '-q', action='store_true', help='Only show names')
     series_command.add_argument('--prefix', '-p', type=str, help='Find series with this prefix')
-    series_command.add_argument('--json', '-J', action='store_true', help='Produce output in machine readable json')
+    json_option(series_command)
 
     aggregate_command = parsers.add_parser('aggregate', help='Combine together values over different periods')
     aggregate_command.add_argument('period', type=time_period, help='Aggregate values over this period')
@@ -163,6 +167,7 @@ def build_parser():
         )
     aggregate_command.add_argument('--missing-value', '-v', type=float, help='Value to fill in gaps with')
     aggregate_command.add_argument('--missing', '-m', action='store_true', help='Include missing values')
+    json_option(aggregate_command)
 
     format_mutex = aggregate_command.add_mutually_exclusive_group()
     format_mutex.add_argument('--record-stream', '-R', action='store_true', help='entries are written separately json on one line')
@@ -170,7 +175,7 @@ def build_parser():
     show_command = parsers.add_parser('show', help='Show the values in a series')
     show_command.add_argument('--series', type=str, help='Only show this timeseries')
     show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident', action='append')
-    show_command.add_argument('--json', action='store_true', help='Output in machine readable json')
+    json_option(show_command)
     show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
     show_command.add_argument('--delete', help='Delete the matches entries', action='store_true')
 
@@ -242,13 +247,14 @@ def run(args):
             db, options.series, options.period, options.record_stream,
             funcs=map(get_agg_func, options.func or ['min']),
             missing_value=options.missing_value,
-            include_missing=options.missing)
+            include_missing=options.missing, is_json=options.json)
     elif options.command == 'series':
         return show_series(db, prefix=options.prefix, is_json=options.json)
     else:
         raise ValueError(options.command)
 
-def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs):
+def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs, is_json):
+    json_results = []
     for row in aggregate_values(db, series, period, funcs, include_empty=include_missing):
         dt, series = row[:2]
         values = row[2:]
@@ -259,12 +265,20 @@ def aggregate(db, series, period, record_stream, missing_value, include_missing,
             value = values[0] if len(values) == 1 else values
             yield json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
         else:
-            result = []
-            result.append('{} {} '.format(dt, series))
-            for value in values:
-                result.append('{} '.format(value))
-            result.append('\n')
-            yield ''.join(result)
+            if is_json:
+                result = []
+                result.append('{} {} '.format(dt, series))
+                for value in values:
+                    result.append('{} '.format(value))
+                result.append('\n')
+                yield ''.join(result)
+            else:
+                json_row = dict(timestamp=datetime_to_ts(dt), date=dt.isoformat())
+                yield json.dumps(dict())
+
+
+def datetime_to_ts():
+    return calendar.timegm(dt.timetuple()) + dt.microsecond * 1e-6
 
 EPOCH = datetime.datetime(1970, 1, 1)
 def aggregate_values(db, series, period, agg_funcs, include_empty=False):
