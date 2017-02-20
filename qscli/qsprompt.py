@@ -16,10 +16,11 @@ import time
 
 INTEGER = 'integer'
 FLOAT = 'float'
-TYPES = (INTEGER, FLOAT)
+STRING = 'string'
+TYPES = (INTEGER, FLOAT, STRING)
 
 PARSER = argparse.ArgumentParser(description='')
-PARSER.add_argument('--type', choices=TYPES)
+PARSER.add_argument('--type', choices=TYPES, default=STRING)
 PARSER.add_argument('--prompt', type=str)
 
 def main():
@@ -34,11 +35,14 @@ def main():
         validation_re = '^[0-9]+(\\.[0-9]*)?$'
     else:
         validation_re = None
-    
+
+
     while True:
-        if args.type in (INTEGER, FLOAT):
+        if args.type in (INTEGER, FLOAT, STRING):
             result = backticks(['zenity', '--entry'] + (['--text', prompt] if prompt else []))
-    
+        else:
+            raise ValueError()
+
         if validation_re:
             if not re.search(validation_re, result):
                 errored = True
@@ -47,7 +51,7 @@ def main():
                 continue
     
         break
-    print result
+    print result,
 
 def backticks(command):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
