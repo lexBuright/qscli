@@ -243,9 +243,10 @@ def run(args):
             return  show(db, options.series, options.ident, options.json, indexes=options.index)
 
     elif options.command == 'aggregate':
+        functions = options.func or ['min']
         return aggregate(
             db, options.series, options.period, options.record_stream,
-            funcs=map(get_agg_func, options.func or ['min']),
+            funcs=zip(functions, map(get_agg_func, options.func or ['min'])),
             missing_value=options.missing_value,
             include_missing=options.missing, is_json=options.json)
     elif options.command == 'series':
@@ -254,8 +255,7 @@ def run(args):
         raise ValueError(options.command)
 
 def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs, is_json):
-    json_results = []
-    for row in aggregate_values(db, series, period, funcs, include_empty=include_missing):
+    for row in aggregate_values(db, series, period, [f for (name, f) in funcs], include_empty=include_missing):
         dt, series = row[:2]
         values = row[2:]
         values = [value.strip('\n') if isinstance(value, (str, unicode)) else value for value in values]
@@ -274,7 +274,8 @@ def aggregate(db, series, period, record_stream, missing_value, include_missing,
                 yield ''.join(result)
             else:
                 json_row = dict(timestamp=datetime_to_ts(dt), date=dt.isoformat())
-                yield json.dumps(dict())
+                json_row.update(zip(funcs, values))
+                yield json.dumps(json_row)
 
 
 def datetime_to_ts():
