@@ -122,9 +122,21 @@ class Query(object):
     def values(self):
         return self.insert_values + self.where_values
 
-
 class Expression(object):
     "An SQL value forming part of a where condition, or selected value"
+
+class Regex(Expression):
+    #  http://stackoverflow.com/questions/5071601/how-do-i-use-regex-in-a-sqlite-query
+    # Call .load /usr/lib/sqlite3/pcre.so when you open the db
+    def __init__(self, key, value):
+        self._key = key
+        self._value = value
+
+    def query(self):
+        return "({} REGEXP ?)".format(self._key)
+
+    def values(self):
+        return (self._value,)
 
 class Or(Expression):
     def __init__(self):

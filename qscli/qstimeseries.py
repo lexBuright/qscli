@@ -27,12 +27,16 @@ DEFAULT_CONFIG_DIR = os.path.join(os.environ['HOME'], '.config', 'qstimeseries')
 
 IdentUnion = collections.namedtuple('IdentUnion', 'native_id given_id')
 
+def connect(data_file):
+    db = sqlite3.connect(data_file)
+    db.load_extension("/usr/lib/sqlite3/pcre")
+    return db
+
 def ensure_database(config_dir):
     data_file = os.path.join(config_dir, 'data.sqlite')
     if not os.path.exists(data_file):
         try:
             LOGGER.debug('Creating database')
-            db = sqlite3.connect(data_file)
             cursor = db.cursor()
             cursor.execute('''
             CREATE TABLE timeseries(id INTEGER PRIMARY KEY, series TEXT NOT NULL, given_ident TEXT, time TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL, float_value REAL, string_value TEXT,
@@ -49,7 +53,7 @@ def ensure_database(config_dir):
     else:
         LOGGER.debug('Database already exists')
 
-    return sqlite3.connect(data_file)
+    return connect(data_file)
 
 def append(db, series, value_string, value_type, ident, time_value, update):
     if ident and ident.native_id is not None:
@@ -72,7 +76,6 @@ def append(db, series, value_string, value_type, ident, time_value, update):
     try:
         cursor.execute(query.query(), query.values())
     except:
-        print query.query()
         db.rollback()
         raise
     db.commit()
@@ -98,8 +101,8 @@ def get_values(db, series, ids=None):
 
 def execute(db, query, values):
     cursor = db.cursor()
-    cursor.execute(query, values)
     LOGGER.debug('Running %r %r', query, values)
+    cursor.execute(query, values)
     return cursor.fetchall()
 
 def only_show_indexes(iterable, indexes):
@@ -111,27 +114,6 @@ def only_show_indexes(iterable, indexes):
         for index, x in enumerate(iterable):
             if index in indexes:
                 yield x
-
-def show(db, series, ids, json_output, indexes=None):
-    records = get_values(db, series, ids=ids)
-    records = only_show_indexes(records, indexes) if indexes is not None else records
-    if not json_output:
-        result = []
-        for time_string, series, ident, value in records:
-            if isinstance(value, (str, unicode)):
-                value = value.strip('\n')
-
-            dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-            result.append('{} {} {} {}'.format(dt.isoformat(), ident, series, value))
-        return '\n'.join(result),
-    else:
-        result = []
-        for time_string, series, ident, value in records:
-            dt = pytz.UTC.localize(datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S'), is_dst=None)
-            unix_time = calendar.timegm(dt.timetuple())
-            result.append(dict(time=unix_time, series=series, id=ident, value=value))
-        return json.dumps(result),
-
 
 def json_option(parser):
     parser.add_argument('--json', action='store_true', help='Output in machine readable json')
@@ -173,7 +155,9 @@ def build_parser():
     format_mutex.add_argument('--record-stream', '-R', action='store_true', help='entries are written separately json on one line')
 
     show_command = parsers.add_parser('show', help='Show the values in a series')
-    show_command.add_argument('--series', type=str, help='Only show this timeseries')
+    series_mx = show_command.add_mutually_exclusive_group()
+    series_mx.add_argument('--series', type=str, help='Only show this timeseries')
+    series_mx.add_argument('--series-regex', '-r', type=str, help='Only show time series matching this regex')
     show_command.add_argument('--id', type=parse_ident, help='Only show the entry with this id', dest='ident', action='append')
     json_option(show_command)
     show_command.add_argument('--index', type=int, help='Only show the INDEX entry', action='append')
@@ -236,11 +220,22 @@ def run(args):
     if options.command == 'append':
         return append(db, options.series, options.value, options.value_type, options.ident, options.time, options.update)
     elif options.command == 'show':
-
         if options.delete:
-            return delete(db, options.series, options.ident, indexes=options.index)
+            return delete(
+                db,
+                options.series,
+                options.ident,
+                indexes=options.index,
+                series_regex=options.series_regex
+                )
         else:
-            return  show(db, options.series, options.ident, options.json, indexes=options.index)
+            return show(
+                db,
+                options.series,
+                options.ident,
+                options.json,
+                indexes=options.index,
+                series_regex=options.series_regex)
 
     elif options.command == 'aggregate':
         functions = options.func or ['min']
@@ -332,11 +327,15 @@ def parse_ident(ident_string):
     else:
         return IdentUnion(None, None)
 
-def delete(db, series, ids=None, indexes=None):
-    assert ids is None or indexes is None
+
+def _filter(query, series, ids, indexes, series_regex):
+    if series is not None:
+        query.where_equals('series', series)
+
+    if series_regex:
+        query.where_expression(sqlexp.Regex('series',  series_regex))
 
     if ids is not None :
-        query = sqlexp.Query(action='DELETE')
         id_filter = sqlexp.Or()
         for ident in ids:
             if ident.native_id is not None:
@@ -344,12 +343,7 @@ def delete(db, series, ids=None, indexes=None):
 
             if ident.given_id:
                 id_filter.add_equals('given_ident', ident.given_id)
-
         query.where_expression(id_filter)
-
-        cursor = db.cursor()
-        cursor.execute(query.query(), query.values())
-        db.commit()
     elif indexes is not None:
         for index in indexes:
             if index < 0:
@@ -359,7 +353,6 @@ def delete(db, series, ids=None, indexes=None):
                 index = index
                 backwards = False
 
-            cursor = db.cursor()
 
             #values = [series] + ([ident] if ident else [])
 
@@ -370,16 +363,38 @@ def delete(db, series, ids=None, indexes=None):
             query.offset(index)
             query.limit(1)
 
-            cursor.execute(query.query(), query.values())
-            db.commit()
+
+def show(db, series, ids, json_output, indexes, series_regex):
+    query = sqlexp.Query(
+        action='SELECT',
+        fields=('time', 'series', "coalesce(given_ident, 'internal--' || id)", "coalesce(float_value, string_value)"))
+    _filter(query, series, ids, indexes, series_regex)
+
+    records =  execute(db, query.query(), query.values())
+    if not json_output:
+        result = []
+        for time_string, series, ident, value in records:
+            if isinstance(value, (str, unicode)):
+                value = value.strip('\n')
+
+            dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+            result.append('{} {} {} {}'.format(dt.isoformat(), ident, series, value))
+        return '\n'.join(result),
     else:
-        query = sqlexp.Query(action='DELETE')
-        query.where_equals('series', series)
+        result = []
+        for time_string, series, ident, value in records:
+            dt = pytz.UTC.localize(datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S'), is_dst=None)
+            unix_time = calendar.timegm(dt.timetuple())
+            result.append(dict(time=unix_time, series=series, id=ident, value=value))
+        return json.dumps(result),
 
-        cursor = db.cursor()
-        cursor.execute(query.query(), query.values())
-        db.commit()
+def delete(db, series, ids, indexes, series_regex):
+    assert ids is None or indexes is None
 
+    query = sqlexp.Query(action='DELETE')
+    _filter(query, series, ids, indexes, series_regex=series_regex)
+    execute(db, query.query(), query.values())
+    db.commit()
 
 def show_series(db, prefix, is_json):
     cursor = db.cursor()
@@ -398,8 +413,6 @@ def show_series(db, prefix, is_json):
         return json.dumps(dict(series=json_result)),
     else:
         return ''.join(result),
-
-
 
 if __name__ == '__main__':
 	main()
