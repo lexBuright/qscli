@@ -353,7 +353,6 @@ def _filter(query, series, ids, indexes, series_regex):
                 index = index
                 backwards = False
 
-
             #values = [series] + ([ident] if ident else [])
 
             query = sqlexp.Query(action='DELETE')
