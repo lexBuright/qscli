@@ -260,7 +260,7 @@ def aggregate(db, series, period, record_stream, missing_value, include_missing,
             value = values[0] if len(values) == 1 else values
             yield json.dumps(dict(isodate=dt.isoformat(), value=value, series=series, time=dt_time))
         else:
-            if is_json:
+            if not is_json:
                 result = []
                 result.append('{} {} '.format(dt, series))
                 for value in values:
