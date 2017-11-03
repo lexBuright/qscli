@@ -102,8 +102,6 @@ def main():
         show(data, args.name, args.prompt_for_name)
     elif args.command == 'path':
         path(data, args.name)
-    elif args.command == 'blah':
-        raise NotImplementedError()
     elif args.command == 'random':
         show(data, random.choice(data.get_reports()), False)
     elif args.command == 'delete':
