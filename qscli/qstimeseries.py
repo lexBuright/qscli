@@ -251,6 +251,7 @@ def run(args):
         raise ValueError(options.command)
 
 def aggregate(db, series, period, record_stream, missing_value, include_missing, funcs, is_json):
+    func_names = [name for name, _f in funcs]
     for row in aggregate_values(db, series, period, [f for (name, f) in funcs], include_empty=include_missing):
         dt, series = row[:2]
         values = row[2:]
@@ -270,11 +271,11 @@ def aggregate(db, series, period, record_stream, missing_value, include_missing,
                 yield ''.join(result)
             else:
                 json_row = dict(timestamp=datetime_to_ts(dt), date=dt.isoformat())
-                json_row.update(zip(funcs, values))
+                json_row.update(zip(func_names, values))
                 yield json.dumps(json_row)
 
 
-def datetime_to_ts():
+def datetime_to_ts(dt):
     return calendar.timegm(dt.timetuple()) + dt.microsecond * 1e-6
 
 EPOCH = datetime.datetime(1970, 1, 1)
@@ -289,8 +290,9 @@ def aggregate_values(db, series, period, agg_funcs, include_empty=False):
         dt = datetime.datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
         seconds_since_epoch = (dt - EPOCH).total_seconds() // period.total_seconds() * period.total_seconds()
         period_dt = EPOCH + datetime.timedelta(seconds=seconds_since_epoch)
+
         if period_dt != group_dt:
-            LOGGER.debug('Group values %r %r', period_dt, group_values)
+            LOGGER.debug('Group values %r %r', group_dt, group_values)
             for series in sorted(group_values):
                 yield [group_dt, series] + [f(group_values[series]) for f in agg_funcs]
             group_values = collections.defaultdict(list)
