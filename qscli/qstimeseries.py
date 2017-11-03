@@ -190,6 +190,7 @@ AGGREGATION_FUNCTIONS = {
     'rng': rng,
     'values': display_values,
     'sorted_values': sorted_values,
+    'count': len,
 }
 
 def time_period(string):
