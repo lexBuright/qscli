@@ -314,6 +314,10 @@ def aggregate_values(db, series, period, agg_funcs, include_empty=False):
 
         group_values[series].append(value)
 
+    for series in sorted(group_values):
+        yield [group_dt, series] + [f(group_values[series]) for f in agg_funcs]
+
+
 def get_series(db):
     cursor = db.cursor()
     cursor.execute('''
