@@ -55,6 +55,10 @@ def build_parser():
         help='How long to wait before checking if we have stopped',
         default=5)
     play_parser.add_argument(
+        '--start', '-s', type=int,
+        help='Start at this index',
+        default=5)
+    play_parser.add_argument(
         '--error-keep',
         action='store_true',
         help='Do not delete the playback on error')
@@ -118,8 +122,9 @@ def run(args):
             error_keep=options.error_keep,
             poll_period=options.poll_period,
             multiplier=options.multiplier,
-            dry_run=options.dry_run)
-        return player.play()
+            dry_run=options.dry_run,
+        )
+        return player.play(options.start)
 
     with data.with_data(data_path) as app_data:
         try:

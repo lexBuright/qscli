@@ -50,15 +50,21 @@ class Player(object):
                 LOGGER.debug('Next step reached')
                 return False
 
-    def play(self):
+    def play(self, step=0):
         # If you change the recipe under me you are
         #    a terrible human being
         recipe = self.start_playing()
+
+        start_step = step
+        del step
 
         try:
             step_duration = 0
             for index, next_step in enumerate(recipe['steps']):
                 self._initialize_step(index, next_step, recipe)
+
+                if index < start_step:
+                    continue
 
                 if self._play_step(step_duration):
                     LOGGER.debug('Recipe finished')
